@@ -7,12 +7,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
+set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fPIE")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fPIE -pie")
 # set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../assets/shark_inject/${CMAKE_ANDROID_ARCH_ABI}/)
 
-add_executable(
-        shark_inject
-        shark_inject.cpp)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dlfcn)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/dlfcn)
 
-target_link_libraries(
-        shark_inject)
+add_library(inject2 SHARED inject2.cpp)
+target_link_libraries(inject2 dlfcn_compat_static)
+
+add_executable(shark_inject shark_inject.c)
+
+target_link_libraries(shark_inject log)

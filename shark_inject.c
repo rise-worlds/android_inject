@@ -11,23 +11,31 @@
 #include <string.h>
 #include <elf.h>
 #include <android/log.h>
+#include <sys/uio.h>
 
-
-#define ENABLE_DEBUG 1
-
-#if ENABLE_DEBUG
-#define  LOG_TAG "SharkChilli"
-#define  LOGD(fmt, args...)  __android_log_print(ANDROID_LOG_ERROR,LOG_TAG, fmt, ##args)
-#define DEBUG_PRINT(format, args...) \
-    LOGD(format, ##args)
-#else
-#define DEBUG_PRINT(format,args...)
+#if defined(__i386__) || defined(__x86_64__)
+#define pt_regs         user_regs_struct
+#elif defined(__aarch64__)
+#define pt_regs         user_pt_regs
+#define uregs	regs
+#define ARM_pc	pc
+#define ARM_sp	sp
+#define ARM_cpsr	pstate
+#define ARM_lr		regs[30]
+#define ARM_r0		regs[0]
+#define PTRACE_GETREGS PTRACE_GETREGSET
+#define PTRACE_SETREGS PTRACE_SETREGSET
 #endif
 
 #define CPSR_T_MASK     ( 1u << 5 )
 
+#if defined(__aarch64__) || defined(__x86_64__)
+const char *libc_path = "/system/lib64/libc.so";
+const char *linker_path = "/system/bin/linker64";
+#elif defined(__arm__) || defined(__i386__)
 const char *libc_path = "/system/lib/libc.so";
 const char *linker_path = "/system/bin/linker";
+#endif
 
 //读取进程数据
 int ptrace_readdata(pid_t pid, uint8_t *src, uint8_t *buf, size_t size) {
@@ -94,12 +102,17 @@ int ptrace_writedata(pid_t pid, uint8_t *dest, uint8_t *data, size_t size) {
     return 0;
 }
 
-
+#if defined(__arm__) || defined(__aarch64__)
 int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t num_params, struct pt_regs* regs)
 {
     uint32_t i;
+#if defined(__arm__)
+    int num_param_registers = 4;
+#elif defined(__aarch64__)
+    int num_param_registers = 8;
+#endif
     //前4个参数放入寄存器
-    for (i = 0; i < num_params && i < 4; i ++) {
+    for (i = 0; i < num_params && i < num_param_registers; i ++) {
         regs->uregs[i] = params[i];
     }
 
@@ -120,11 +133,11 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t num_params, str
         /* arm */
         regs->ARM_cpsr &= ~CPSR_T_MASK;
     }
-		
-		//那么如何notify进程我们mmp执行完了。就是通过下面这句话。
-		//原因是当函数调用时候，当我们使用bl或者bx，链接寄存器指向的是下一条返回地址，
-		//如果把下条返回地址赋值成0，返回时候pc=0，就会产生异常。相当于一个notify，
-		//然后用下面那个waitpid得到异常模式，确定mmp执行完。所以其实下面不一定是0，只要是无效即可。
+
+    //那么如何notify进程我们mmp执行完了。就是通过下面这句话。
+    //原因是当函数调用时候，当我们使用bl或者bx，链接寄存器指向的是下一条返回地址，
+    //如果把下条返回地址赋值成0，返回时候pc=0，就会产生异常。相当于一个notify，
+    //然后用下面那个waitpid得到异常模式，确定mmp执行完。所以其实下面不一定是0，只要是无效即可。
     regs->ARM_lr = 0;
 
     if (ptrace_setregs(pid, regs) == -1
@@ -145,26 +158,116 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t num_params, str
 
     return 0;
 }
+#elif defined(__i386__)
+long ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t num_params, struct user_regs_struct * regs)
+{
+    regs->esp -= (num_params) * sizeof(long) ;
+    ptrace_writedata(pid, (void *)regs->esp, (uint8_t *)params, (num_params) * sizeof(long));
 
+    long tmp_addr = 0x00;
+    regs->esp -= sizeof(long);
+    ptrace_writedata(pid, regs->esp, (char *)&tmp_addr, sizeof(tmp_addr));
 
-//读取进程寄存器数据
-int ptrace_getregs(pid_t pid, struct pt_regs *regs) {
-    if (ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0) {
-        perror("ptrace_getregs: Can not get register values");
+    regs->eip = addr;
+
+    if (ptrace_setregs(pid, regs) == -1
+            || ptrace_continue( pid) == -1) {
+        printf("error\n");
         return -1;
+    }
+
+    int stat = 0;
+    waitpid(pid, &stat, WUNTRACED);
+    while (stat != 0xb7f) {
+        if (ptrace_continue(pid) == -1) {
+            printf("error\n");
+            return -1;
+        }
+        waitpid(pid, &stat, WUNTRACED);
     }
 
     return 0;
 }
+#elif  defined(__x86_64__)
+long ptrace_call(pid_t pid, uint64_t addr, long *params, uint32_t num_params, struct user_regs_struct * regs)
+{
+    regs->rsp -= (num_params) * sizeof(long) ;
+    ptrace_writedata(pid, (void *)regs->rsp, (uint8_t *)params, (num_params) * sizeof(long));
 
-//设置进程寄存器
-int ptrace_setregs(pid_t pid, struct pt_regs *regs) {
-    if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) {
-        perror("ptrace_setregs: Can not set register values");
+    long tmp_addr = 0x00;
+    regs->rsp -= sizeof(unsigned long);
+    ptrace_writedata(pid, regs->rsp, (char *)&tmp_addr, sizeof(tmp_addr));
+
+    regs->rip = addr;
+
+    if (ptrace_setregs(pid, regs) == -1
+            || ptrace_continue( pid) == -1) {
+        printf("error\n");
+        return -1;
+    }
+
+    int stat = 0;
+    waitpid(pid, &stat, WUNTRACED);
+    while (stat != 0xb7f) {
+        if (ptrace_continue(pid) == -1) {
+            printf("error\n");
+            return -1;
+        }
+        waitpid(pid, &stat, WUNTRACED);
+    }
+
+    return 0;
+}
+#endif
+
+
+//读取进程寄存器数据
+int ptrace_getregs(pid_t pid, struct pt_regs *regs) {
+#if defined (__aarch64__)
+        int regset = NT_PRSTATUS;
+        struct iovec ioVec;
+
+        ioVec.iov_base = regs;
+        ioVec.iov_len = sizeof(*regs);
+    if (ptrace(PTRACE_GETREGSET, pid, (void*)regset, &ioVec) < 0) {
+        perror("ptrace_getregs: Can not get register values");
+        printf(" io %llx, %d\n", ioVec.iov_base, ioVec.iov_len);
         return -1;
     }
 
     return 0;
+#else
+    if (ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0) {
+        perror("ptrace_getregs: Can not get register values\n");
+        return -1;
+    }
+
+    return 0;
+#endif
+}
+
+//设置进程寄存器
+int ptrace_setregs(pid_t pid, struct pt_regs *regs) {
+#if defined (__aarch64__)
+		int regset = NT_PRSTATUS;
+		struct iovec ioVec;
+		
+		ioVec.iov_base = regs;
+		ioVec.iov_len = sizeof(*regs);
+    if (ptrace(PTRACE_SETREGSET, pid, (void*)regset, &ioVec) < 0) {    
+        perror("ptrace_setregs: Can not get register values\n");    
+        return -1;    
+    }    
+    
+    return 0;   
+#else
+    if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) {
+        perror("ptrace_setregs: Can not set register values\n");
+        return -1;
+    }
+
+    return 0;
+#endif
 }
 
 //进程继续指向
@@ -221,7 +324,6 @@ void *get_module_base(pid_t pid, const char *module_name) {
         while (fgets(line, sizeof(line), fp)) {
             if (strstr(line, module_name)) {
                 pch = strtok(line, "-");
-                
                 addr = strtoul(pch, NULL, 16);
 
                 if (addr == 0x8000)
@@ -244,10 +346,15 @@ void *get_remote_addr(pid_t target_pid, const char *module_name, void *local_add
     local_handle = get_module_base(-1, module_name);
     remote_handle = get_module_base(target_pid, module_name);
 
-    DEBUG_PRINT("[+] get_remote_addr: local[%x], remote[%x]\n", local_handle, remote_handle);
+    printf("[+] get_remote_addr: local[%x], remote[%x]\n", local_handle, remote_handle);
 
-    void *ret_addr = (void *) ((uint32_t) local_addr + (uint32_t) remote_handle -
-                               (uint32_t) local_handle);
+    void *ret_addr = (void *) ((uint32_t) local_addr + (uint32_t) remote_handle - (uint32_t) local_handle);
+
+#if defined(__i386__)
+    if (!strcmp(module_name, libc_path)) {
+        ret_addr += 2;
+    }
+#endif
 
     return ret_addr;
 }
@@ -293,22 +400,34 @@ int find_pid_of(const char *process_name) {
 }
 
 long ptrace_retval(struct pt_regs *regs) {
+#if defined(__arm__) || defined(__aarch64__)
     return regs->ARM_r0;
+#elif defined(__x86_64__)
+    return regs->rax;
+#elif defined(__i386__)
+    return regs->eax;
+#endif
 }
 
 long ptrace_ip(struct pt_regs *regs) {
+#if defined(__arm__) || defined(__aarch64__)
     return regs->ARM_pc;
+#elif defined(__x86_64__)
+    return regs->rip;
+#elif defined(__i386__)
+    return regs->eip;
+#endif
 }
 
 int ptrace_call_wrapper(pid_t target_pid, const char *func_name, void *func_addr, long *parameters,
                         int param_num, struct pt_regs *regs) {
-    DEBUG_PRINT("[+] Calling %s in target process.\n", func_name);
-    if (ptrace_call(target_pid, (uint32_t) func_addr, parameters, param_num, regs) == -1)
+    printf("[+] Calling %s in target process.\n", func_name);
+    if (ptrace_call(target_pid, func_addr, parameters, param_num, regs) == -1)
         return -1;
 
     if (ptrace_getregs(target_pid, regs) == -1)
         return -1;
-    DEBUG_PRINT("[+] Target process returned from %s, return value=%x, pc=%x \n",
+    printf("[+] Target process returned from %s, return value=%x, pc=%x \n",
                 func_name, ptrace_retval(regs), ptrace_ip(regs));
     return 0;
 }
@@ -330,7 +449,7 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
     uint32_t code_length;
     long parameters[10];
 
-    DEBUG_PRINT("[+] Injecting process: %d\n", target_pid);
+    printf("[+] Injecting process: %d\n", target_pid);
     //1.首先挂载到目标进程
     if (ptrace_attach(target_pid) == -1)
         goto exit;
@@ -351,9 +470,9 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
     //获取目标进程 dlerror 函数的地址
     dlerror_addr = get_remote_addr(target_pid, linker_path, (void *) dlerror);
 
-    DEBUG_PRINT("[+] Get imports: dlopen: %x, dlsym: %x, dlclose: %x, dlerror: %x\n",
+    printf("[+] Get imports: dlopen: %x, dlsym: %x, dlclose: %x, dlerror: %x\n",
                 dlopen_addr, dlsym_addr, dlclose_addr, dlerror_addr);
-    DEBUG_PRINT("[+] Remote mmap address: %x\n", mmap_addr);
+    printf("[+] Remote mmap address: %x\n", mmap_addr);
 
     //4.使用mmap函数分配字符串内存
     /* call mmap 准备mmap参数 这里分配0x4000大小的内存*/
@@ -369,7 +488,6 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
         goto exit;
 
     map_base = ptrace_retval(&regs);
-   
 
     printf("library path = %s\n", library_path);
     //5.往目标进程写入library_path中的字符串
@@ -393,8 +511,8 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
         goto exit;
 
     void *hook_entry_addr = ptrace_retval(&regs);
-    DEBUG_PRINT("hook_entry_addr = %p\n", hook_entry_addr);
-		//9.为调用的函数参数，拷贝字符串 (这里分配到0x200后面 一般上面的字符串不会超过)
+    printf("hook_entry_addr = %p\n", hook_entry_addr);
+    //9.为调用的函数参数，拷贝字符串 (这里分配到0x200后面 一般上面的字符串不会超过)
 #define FUNCTION_PARAM_ADDR_OFFSET      0x200
     ptrace_writedata(target_pid, map_base + FUNCTION_PARAM_ADDR_OFFSET, param, strlen(param) + 1);
     parameters[0] = map_base + FUNCTION_PARAM_ADDR_OFFSET;
@@ -428,7 +546,7 @@ int main(int argc, char **argv) {
         return -1;
     }
     printf("target_pid=%d argc=%d\n ", target_pid, argc);
-    char *sopath = "/data/local/tmp/inject_shark.so";
+    char *sopath = "/data/local/tmp/libinject2.so";
     if (argc > 2) {
         sopath = argv[2];
     }
