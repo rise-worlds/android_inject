@@ -116,7 +116,7 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t num_params, str
         regs->uregs[i] = params[i];
     }
 
-		//后面的参数从右往左依次入栈
+    //后面的参数从右往左依次入栈
     if (i < num_params) {
         //栈空间大小
         regs->ARM_sp -= (num_params - i) * sizeof(long) ;
@@ -532,34 +532,4 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 
     exit:
     return ret;
-}
-
-int main(int argc, char **argv) {
-    pid_t target_pid;
-    char *process_name = "com.shark.initapp";
-    if (argc > 1) {
-        process_name = argv[1];
-    }
-    target_pid = find_pid_of(process_name);
-    if (-1 == target_pid) {
-        printf("Can't find the process\n");
-        return -1;
-    }
-    printf("target_pid=%d argc=%d\n ", target_pid, argc);
-    char *sopath = "/data/local/tmp/libinject2.so";
-    if (argc > 2) {
-        sopath = argv[2];
-    }
-    char *main_entry = "main_entry";
-    if (argc > 3) {
-        main_entry = argv[3];
-    }
-    char *parameter = "parameter";
-    if (argc > 4) {
-        parameter = argv[4];
-    }
-
-    printf("inject_remote_process start\n");
-    inject_remote_process(target_pid, sopath, main_entry, parameter, strlen(parameter));
-    return 0;
 }

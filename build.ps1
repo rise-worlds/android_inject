@@ -24,33 +24,21 @@ function remove_tempfile {
 
 # echo $NDK
 Remove-Item build_armeabi-v7a -Recurse
-mkdir build_armeabi-v7a
-Set-Location build_armeabi-v7a
-cmake -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=19 -DANDROID_PLATFORM=android-19 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DANDROID_ABI=armeabi-v7a -DCMAKE_ANDROID_ARCH_ABI=armeabi-v7a ..
-ninja
+cmake -S . -B build_armeabi-v7a -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=21 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DCMAKE_ANDROID_ARCH_ABI=armeabi-v7a
+cmake --build build_armeabi-v7a --parallel 4
 # remove_tempfile
-Set-Location ..
 
 Remove-Item build_arm64-v8a -Recurse
-mkdir build_arm64-v8a
-Set-Location build_arm64-v8a
-cmake -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=21 -DANDROID_PLATFORM=android-21 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DANDROID_ABI=arm64-v8a -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a ..
-ninja
+cmake -S . -B build_arm64-v8a -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=21 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+cmake --build build_arm64-v8a --parallel 4
 # remove_tempfile
-Set-Location ..
 
 Remove-Item build_x86 -Recurse
-mkdir build_x86
-Set-Location build_x86
-cmake -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=19 -DANDROID_PLATFORM=android-19 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DANDROID_ABI=x86 -DCMAKE_ANDROID_ARCH_ABI=x86 ..
-ninja
+cmake -S . -B build_x86 -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=21 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DCMAKE_ANDROID_ARCH_ABI=x86
+cmake --build build_x86 --parallel 4
 # remove_tempfile
-Set-Location ..
 
 Remove-Item build_x86_64 -Recurse
-mkdir build_x86_64
-Set-Location build_x86_64
-cmake -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=21 -DANDROID_PLATFORM=android-21 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DANDROID_ABI=x86_64 -DCMAKE_ANDROID_ARCH_ABI=x86_64 ..
-ninja
+cmake -S . -B build_x86_64 -G "Ninja" -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=21 -DCMAKE_ANDROID_STL_TYPE=c++_static -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" -DCMAKE_ANDROID_NDK="$NDK" -DCMAKE_ANDROID_ARCH_ABI=x86_64
+cmake --build build_x86_64 --parallel 4
 # remove_tempfile
-Set-Location ..
