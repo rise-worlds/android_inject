@@ -1,6 +1,7 @@
 
 #include "selinux.h"
 #include "shark_inject.h"
+#include <string.h>
 
 int main(int argc, char **argv) {
     pid_t target_pid;

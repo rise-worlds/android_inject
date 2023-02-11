@@ -249,17 +249,17 @@ int ptrace_getregs(pid_t pid, struct pt_regs *regs) {
 //设置进程寄存器
 int ptrace_setregs(pid_t pid, struct pt_regs *regs) {
 #if defined (__aarch64__)
-		int regset = NT_PRSTATUS;
-		struct iovec ioVec;
-		
-		ioVec.iov_base = regs;
-		ioVec.iov_len = sizeof(*regs);
-    if (ptrace(PTRACE_SETREGSET, pid, (void*)regset, &ioVec) < 0) {    
-        perror("ptrace_setregs: Can not get register values\n");    
-        return -1;    
-    }    
-    
-    return 0;   
+    int regset = NT_PRSTATUS;
+    struct iovec ioVec;
+
+    ioVec.iov_base = regs;
+    ioVec.iov_len = sizeof(*regs);
+    if (ptrace(PTRACE_SETREGSET, pid, (void*)regset, &ioVec) < 0) {
+        perror("ptrace_setregs: Can not get register values\n");
+        return -1;
+    }
+
+    return 0;
 #else
     if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) {
         perror("ptrace_setregs: Can not set register values\n");

@@ -91,6 +91,7 @@ __attribute__((constructor)) static void ctor()
     __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "start hook");
 }
 
+__attribute__ ((visibility ("default"))) 
 void main_entry(const char* str)
 {
     __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "enter main_entry");
