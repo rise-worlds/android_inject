@@ -1,0 +1,24 @@
+[
+    {
+      "name": "Clang Android",
+      "compilers": {
+        "C": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe",
+        "CC": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe",
+        "CXX": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++.exe"
+      },
+      "environmentVariables": {
+        "ANDROID_NDK": "${env:ANDROID_NDK_ROOT}"
+      },
+      "toolchainFile": "${env:ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake",
+      "cmakeSettings": {
+        "CMAKE_INSTALL_PREFIX": "${workspaceFolder}/out/android/${variant:buildType}/${variant:abi}",
+        "ANDROID_TOOLCHAIN": "clang",
+        "ANDROID_NATIVE_API_LEVEL": 21,
+        "ANDROID_STL": "c++_shared",
+        "ANDROID_ABI": "armeabi-v7a",
+        "ANDROID_CPP_FEATURES": "rtti exceptions",
+        "CMAKE_C_COMPILER": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe",
+        "CMAKE_CXX_COMPILER": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++.exe"
+      }
+    }
+]
