@@ -20,3 +20,11 @@ target_link_libraries(inject2 dlfcn_compat_static)
 add_executable(shark_inject main.cpp shark_inject.c selinux.cc)
 
 target_link_libraries(shark_inject log)
+
+include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/)
+include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/capstone)
+include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/glib-2.0)
+include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/lib/glib-2.0/include)
+include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/frida-1.0)
+link_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/lib)
+add_subdirectory(frida-inject-custom)
