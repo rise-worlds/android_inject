@@ -15,7 +15,6 @@
         "ANDROID_TOOLCHAIN": "clang",
         "ANDROID_NATIVE_API_LEVEL": 21,
         "ANDROID_STL": "c++_shared",
-        "ANDROID_ABI": "armeabi-v7a",
         "ANDROID_CPP_FEATURES": "rtti exceptions",
         "CMAKE_C_COMPILER": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe",
         "CMAKE_CXX_COMPILER": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++.exe"
