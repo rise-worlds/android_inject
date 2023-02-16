@@ -3,7 +3,9 @@
         {
             "name": "Android",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "${env:ANDROID_NDK_ROOT}/sysroot/usr/include",
+                "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include",
             ],
             "defines": [
             ],
