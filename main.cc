@@ -5,7 +5,7 @@
 
 int main(int argc, char **argv) {
     pid_t target_pid;
-    char *process_name = "com.shark.initapp";
+    const char *process_name = "com.shark.initapp";
     if (argc > 1) {
         process_name = argv[1];
     }
@@ -15,15 +15,15 @@ int main(int argc, char **argv) {
         return -1;
     }
     printf("target_pid=%d argc=%d\n ", target_pid, argc);
-    char *sopath = "/data/local/tmp/libinject2.so";
+    const char *sopath = "/data/local/tmp/libinject2.so";
     if (argc > 2) {
         sopath = argv[2];
     }
-    char *main_entry = "main_entry";
+    const char *main_entry = "main_entry";
     if (argc > 3) {
         main_entry = argv[3];
     }
-    char *parameter = "parameter";
+    const char *parameter = "parameter";
     if (argc > 4) {
         parameter = argv[4];
     }

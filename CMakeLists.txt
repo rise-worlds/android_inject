@@ -30,7 +30,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dlfcn)
 add_library(inject2 SHARED inject2.cpp)
 target_link_libraries(inject2 dlfcn_compat_static)
 
-add_executable(shark_inject main.cpp shark_inject.c selinux.cc)
+add_executable(shark_inject main.cc shark_inject.c selinux.cc)
 
 target_link_libraries(shark_inject log)
 

@@ -300,7 +300,7 @@ EGLBoolean my_EglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
 void dlopen_process(const char *name, void *handle)
 {
-    // LOGD("dlopen: %s", name);
+    LOGD("dlopen: %s", name);
     if (!il2cppHandle)
     {
         if (strstr(name, "libil2cpp.so"))
@@ -343,15 +343,15 @@ void *main_thread(void *)
     // 适配性问题
     int apiLevel = getAndroidApiLevel();
     void *addr;
-    if (apiLevel >= 30)
-    { // 真机
+    if (apiLevel >= 30) // 真机
+    {
         void *libdl_handle = dlopen("libdl.so", RTLD_LAZY);
         addr = dlsym(libdl_handle, "__loader_dlopen");
         LOGI("__loader_dlopen at: %p", addr);
         DobbyHook(addr, (void *)my__loader_dlopen, (void **)&origin__loader_dlopen);
     }
-    else if (apiLevel >= 24)
-    {                                                                                        // android 7.0 虚拟机适配
+    else if (apiLevel >= 24)    // android 7.0 虚拟机适配
+    {
         addr = DobbySymbolResolver(nullptr, "__dl__Z9do_dlopenPKciPK17android_dlextinfoPv"); // 通过hook掉dlopen获取il2cpp的句柄
         LOGD("__dl__Z9do_dlopenPKciPK17android_dlextinfoPv addr: %p", addr);
         if (addr)
@@ -425,19 +425,13 @@ void *main_thread(void *)
 }
 
 // 先atmain函数执行的 最高执行权重函数
-__unused __attribute__((constructor)) void constructor_main()
+__attribute__((constructor)) void constructor_main()
 {
-    LOGD("ToramCheat started");
+    LOGD("YYCheat started");
 
     pthread_t ptid;
     // 另开线程 以免阻塞游戏主线程
     pthread_create(&ptid, nullptr, main_thread, nullptr);
 
-    LOGD("ToramCheat Finished");
-}
-
-// 主函数
-int main()
-{ // nothing to do
-    return 0;
+    LOGD("YYCheat Finished");
 }
