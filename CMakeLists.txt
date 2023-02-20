@@ -7,12 +7,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
-set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fPIE")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fPIE -pie")
 # set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../assets/shark_inject/${CMAKE_ANDROID_ARCH_ABI}/)
 
+add_definitions(-DANDROID)
+
+set(DOBBY_GENERATE_SHARED OFF)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dobby)
+
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/dobby/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/Il2cppResolver
+    ${CMAKE_CURRENT_SOURCE_DIR}/dlfcn
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils
+    )
+    
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/utils)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dlfcn)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/dlfcn)
 
 add_library(inject2 SHARED inject2.cpp)
 target_link_libraries(inject2 dlfcn_compat_static)
@@ -24,3 +37,6 @@ target_link_libraries(shark_inject log)
 include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/)
 link_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/lib)
 add_subdirectory(frida-inject-custom)
+
+add_library(UnityCheat SHARED UnityCheat.cpp)
+target_link_libraries(UnityCheat dobby utils_static)

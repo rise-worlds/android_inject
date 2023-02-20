@@ -13,8 +13,8 @@ include_directories(
         ${dlfcn_compat_static_header}
 )
 
- message(STATUS "dlfcn_compat_static_sources=${dlfcn_compat_static_sources}")
- message(STATUS "dlfcn_compat_static_header=${dlfcn_compat_static_header}")
+message(STATUS "dlfcn_compat_static_sources=${dlfcn_compat_static_sources}")
+message(STATUS "dlfcn_compat_static_header=${dlfcn_compat_static_header}")
 
 add_library(dlfcn_compat_static STATIC ${dlfcn_compat_static_sources})
 target_link_libraries(dlfcn_compat_static log)

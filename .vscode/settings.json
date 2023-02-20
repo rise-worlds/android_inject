@@ -65,4 +65,10 @@
     "cmake.additionalKits": [
         "test"
     ],
+    "files.associations": {
+        "*.in": "cpp",
+        "CMakeLists.txt": "cmake",
+        "iostream": "cpp",
+        "typeinfo": "cpp"
+    },
 }
