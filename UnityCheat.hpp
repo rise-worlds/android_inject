@@ -75,8 +75,12 @@ static unsigned long il2cppAddress = 0; // 存储il2cpp.so基地址
 // static Il2CppObject *ret_AsobimoId;
 // static string AsobimoId;
 // Method
-int (*Screen$$get_height)(); // 预定义一个方法
-int (*Screen$$get_width)();  // 预定义一个方法
+int (*Screen$$get_height)();    // 预定义一个方法
+int (*Screen$$get_width)();     // 预定义一个方法
+float (*Time$$get_timeScale)(); // 预定义一个方法
+void (*Time$$set_timeScale)(float); // 预定义一个方法
+float (*Time$$get_deltaTime)(); // 预定义一个方法
+void (*Time$$set_deltaTime)(float); // 预定义一个方法
 void *main_thread(void *);
 // Hook预定义模版
 #define HOOK_DEF(ret, func, ...) \

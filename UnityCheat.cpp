@@ -217,21 +217,21 @@ EGLBoolean my_EglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     {
         // if (!isGuiInit)
         // { // 判断是否初始化过imgui
-        // 	LOGD("[UnityCheat] Main screen detected!");
-        // 	IMGUI_CHECKVERSION(); // 初始化imgui
-        // 	LOGD("[UnityCheat] Init imgui!");
-        // 	ImGui::CreateContext();																												   // 创建imgui上下文
-        // 	ImGuiIO &io = ImGui::GetIO();																										   // 获取imgui IO
-        // 	io.DisplaySize = ImVec2(Screen$$get_width(), Screen$$get_height());																	   // 设置屏幕尺寸
-        // 	io.IniFilename = nullptr;																											   // 关闭imgui配置文件
-        // 	ImGui::StyleColorsDark();																											   // 设置imgui默认颜色
-        // 	ImGui_ImplOpenGL3_Init("#version 300 es");																							   // 初始化imgui opengl
-        // 	ImFontConfig font_cfg;																												   // 创建字体配置
-        // 	ImFont *myFont;																														   // 设置字体
-        // 	font_cfg.FontDataOwnedByAtlas = false;																								   // 设置字体数据是否在图集中
-        // 	myFont = io.Fonts->AddFontFromMemoryTTF((void *)OPPOSans_H, OPPOSans_H_size, 32.0f, &font_cfg, io.Fonts->GetGlyphRangesChineseFull()); // 加载字体 - 字体用OPPO开源的
-        // 	isGuiInit = true;																													   // 设置初始化过imgui
-        // 	LOGD("[UnityCheat] Start imgui!");
+        //     LOGD("[UnityCheat] Main screen detected!");
+        //     IMGUI_CHECKVERSION(); // 初始化imgui
+        //     LOGD("[UnityCheat] Init imgui!");
+        //     ImGui::CreateContext();																												   // 创建imgui上下文
+        //     ImGuiIO &io = ImGui::GetIO();																										   // 获取imgui IO
+        //     io.DisplaySize = ImVec2(Screen$$get_width(), Screen$$get_height());																	   // 设置屏幕尺寸
+        //     io.IniFilename = nullptr;																											   // 关闭imgui配置文件
+        //     ImGui::StyleColorsDark();																											   // 设置imgui默认颜色
+        //     ImGui_ImplOpenGL3_Init("#version 300 es");																							   // 初始化imgui opengl
+        //     ImFontConfig font_cfg;																												   // 创建字体配置
+        //     ImFont *myFont;																														   // 设置字体
+        //     font_cfg.FontDataOwnedByAtlas = false;																								   // 设置字体数据是否在图集中
+        //     myFont = io.Fonts->AddFontFromMemoryTTF((void *)OPPOSans_H, OPPOSans_H_size, 32.0f, &font_cfg, io.Fonts->GetGlyphRangesChineseFull()); // 加载字体 - 字体用OPPO开源的
+        //     isGuiInit = true;																													   // 设置初始化过imgui
+        //     LOGD("[UnityCheat] Start imgui!");
         // }
 
         // if (isGuiInit)
@@ -300,7 +300,7 @@ EGLBoolean my_EglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
 void dlopen_process(const char *name, void *handle)
 {
-    LOGD("dlopen: %s", name);
+    // LOGD("dlopen: %s", name);
     if (!il2cppHandle)
     {
         if (strstr(name, "libil2cpp.so"))
@@ -400,6 +400,48 @@ void *main_thread(void *)
     if (Screen$$get_height && Screen$$get_width)
     {
         LOGI("Screen height is %d \nScreen width is %d", Screen$$get_height(), Screen$$get_width());
+    }
+
+    
+    InitResolveFunc(Time$$set_timeScale, "UnityEngine.Time::set_timeScale");
+    InitResolveFunc(Time$$get_timeScale, "UnityEngine.Time::get_timeScale");
+    // const MethodInfo *timeScale_method = GetMethod_for_Property_Get("Assembly-CSharp", "UnityEngine", "Time", "timeScale");
+    // float timeScale = (float)il2cpp_runtime_invoke(timeScale_method, NULL, NULL, NULL);
+    // FieldInfo* Time$$timeScale = il2cpp_class_get_field_from_name("UnityEngine.Time", "timeScale");
+
+	const MethodInfo *setTime = (MethodInfo*)GetMethod("UnityEngine.CoreModule", "UnityEngine", "Time", "set_timeScale", 1);
+    if (setTime)
+    {
+        LOGD("get set_timeScale: %p", setTime->methodPointer);
+    }
+    std::function SetTimeScale = [setTime](float f) {
+        void* args[1] = { &f };
+
+        Il2CppException* exc;
+        il2cpp_runtime_invoke(setTime, nullptr, args, &exc);
+    };
+    if (Time$$get_timeScale)
+    {
+        LOGI("Time scale is %f \n", Time$$get_timeScale());
+    }
+    SetTimeScale(3.0f);
+    if (Time$$set_timeScale)
+    {
+        LOGD("get set_timeScale: %p", Time$$set_timeScale);
+        Time$$set_timeScale(3.0f);
+        LOGI("Time scale set %f \n", 3.0f);
+    }
+
+    InitResolveFunc(Time$$get_deltaTime, "UnityEngine.Time::get_deltaTime");
+    InitResolveFunc(Time$$set_deltaTime, "UnityEngine.Time::set_deltaTime");
+    if (Time$$get_deltaTime)
+    {
+        LOGI("Time delta is %f \n", Time$$get_deltaTime());
+    }
+    if (Time$$set_deltaTime)
+    {
+        Time$$set_deltaTime(0.1);
+        LOGI("Time delta set %f \n", 0.1);
     }
 
     void *sym_eglSwapBuffers = DobbySymbolResolver(NULL, "eglSwapBuffers"); // 获取eglSwapBuffers地址

@@ -69,6 +69,7 @@
         "*.in": "cpp",
         "CMakeLists.txt": "cmake",
         "iostream": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "locale": "cpp"
     },
 }
