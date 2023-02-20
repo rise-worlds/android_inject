@@ -1,5 +1,0 @@
-*.a !text !filter !merge !diff
-/frida/frida-android-arm64-v8a/lib/libfrida-core.a filter=lfs diff=lfs merge=lfs -text
-/frida/frida-android-armeabi-v7a/lib/libfrida-core.a filter=lfs diff=lfs merge=lfs -text
-/frida/frida-android-x86/lib/libfrida-core.a filter=lfs diff=lfs merge=lfs -text
-/frida/frida-android-x86_64/lib/libfrida-core.a filter=lfs diff=lfs merge=lfs -text
