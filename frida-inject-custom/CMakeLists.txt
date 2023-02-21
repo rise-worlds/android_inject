@@ -11,6 +11,6 @@ target_link_libraries(agent frida-core frida-gum log z)
 set_target_properties(agent PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/agent.version")
 
 add_executable(inject inject.c)
-target_link_libraries(inject frida-core frida-gum log z)
+target_link_libraries(inject frida-core frida-gum utils_static log z)
 
 add_executable(victim victim.c)

@@ -23,10 +23,6 @@
 #include <dobby.h>
 #include <Logger.hpp>
 
-/*读取模块地址*/
-long getModuleBase(const char *moduleName);
-/*判断目标so是否加载*/
-bool isLibraryLoaded(const char *libraryName);
 
 /*------ memcpy直接读写内存 只在注入情况下可行 ------*/
 /*读值的基础函数*/

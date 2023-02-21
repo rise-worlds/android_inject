@@ -8,6 +8,7 @@
 #include <string>
 #include <android/log.h>
 #include <dlfcn.h>
+#include "Logger.hpp"
 #include "dlfcn_compat.h"
 
 int find_pid_of(const char *process_name)
@@ -88,17 +89,17 @@ void* get_module_base(pid_t pid, const char* module_name)
 
 __attribute__((constructor)) static void ctor()
 {
-    __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "start hook");
+    LOGE("start hook");
 }
 
 __attribute__ ((visibility ("default"))) 
 void main_entry(const char* str)
 {
-    __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "enter main_entry");
+    LOGE("enter main_entry");
 
     void *handle = dlopen_compat("libutils.so", RTLD_NOW);
     if (!handle) {
-        __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "cannot load libutils.so");
+        LOGE("cannot load libutils.so");
         return;
     }
 
@@ -117,7 +118,7 @@ void main_entry(const char* str)
     dlclose_compat(handle);
 
     if (!create_string || !get_len || !delete_string) {
-        __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "required functions missing in libutils.so");
+        LOGE("required functions missing in libutils.so");
         return;
     }
 
@@ -126,12 +127,12 @@ void main_entry(const char* str)
 
     create_string(&str8, str);
     if (!str8) {
-        __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "failed to create string");
+        LOGE("failed to create string");
         return;
     }
 
     size_t len = get_len(&str8);
-    __android_log_print(ANDROID_LOG_ERROR, "yy-hook", "%s: length = %d", str, (int) len);
+    LOGE("%s: length = %d", str, (int) len);
 
     delete_string(&str8);
 }

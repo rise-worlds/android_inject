@@ -41,13 +41,12 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dlfcn)
 add_library(inject2 SHARED inject2.cpp)
 target_link_libraries(inject2 dlfcn_compat_static)
 
-add_executable(shark_inject main.cc shark_inject.c selinux.cc)
-
-target_link_libraries(shark_inject log)
+add_executable(shark_inject main.cc shark_inject.c)
+target_link_libraries(shark_inject utils_static)
 
 include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/)
 link_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/lib)
 add_subdirectory(frida-inject-custom)
 
 add_library(UnityCheat SHARED UnityCheat.cpp)
-target_link_libraries(UnityCheat dobby utils_static)
+target_link_libraries(UnityCheat dobby frida-gum utils_static)

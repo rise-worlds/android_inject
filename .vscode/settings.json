@@ -70,6 +70,9 @@
         "CMakeLists.txt": "cmake",
         "iostream": "cpp",
         "typeinfo": "cpp",
-        "locale": "cpp"
+        "locale": "cpp",
+        "filesystem": "cpp",
+        "memorytools.hpp": "c",
+        "progress.h": "c"
     },
 }

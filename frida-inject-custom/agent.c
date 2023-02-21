@@ -47,9 +47,10 @@ void example_agent_main(const gchar *data, gboolean *stay_resident)
 
     gum_init_embedded();
 
-    g_printerr("example_agent_main()\n");
+    g_printerr("example_agent_main(\"%s\")\n", data);
 
     interceptor = gum_interceptor_obtain();
+    listener = my_callback_listener_new();
 
     /* Transactions are optional but improve performance with multiple hooks. */
     gum_interceptor_begin_transaction(interceptor);
@@ -58,11 +59,15 @@ void example_agent_main(const gchar *data, gboolean *stay_resident)
     gum_interceptor_replace(interceptor, (gpointer)gum_module_find_export_by_name(NULL, "gettimeofday"), &gettimeofday_hook, NULL, NULL);
     // gum_interceptor_replace(interceptor, (gpointer)gum_module_find_export_by_name(NULL, "clock_gettime"), &clock_gettime_hook, NULL, NULL);
 
-    listener = my_callback_listener_new();
-    gum_interceptor_attach(interceptor,
-                           GSIZE_TO_POINTER(gum_module_find_export_by_name("libtimetest.so", "Java_com_example_timetest_MainActivity_stringFromJNI")),
-                           GUM_INVOCATION_LISTENER(listener),
-                           GSIZE_TO_POINTER(MY_HOOK_StringFromJNI));
+    GumAddress address = gum_module_find_export_by_name("libtimetest.so", "Java_com_example_timetest_MainActivity_stringFromJNI");
+    g_printerr("stringFromJNI addr:%d\n", address);
+    if (address > 0)
+    {
+        gum_interceptor_attach(interceptor,
+                            GSIZE_TO_POINTER(address),
+                            GUM_INVOCATION_LISTENER(listener),
+                            GSIZE_TO_POINTER(MY_HOOK_StringFromJNI));
+    }
 
     /*
      * ^
@@ -73,6 +78,10 @@ void example_agent_main(const gchar *data, gboolean *stay_resident)
      */
 
     gum_interceptor_end_transaction(interceptor);
+
+    // g_object_unref (listener);
+    // g_object_unref (interceptor);
+    // gum_deinit_embedded();
 }
 
 static int open_hook(const char *path, int oflag, ...)
@@ -97,8 +106,7 @@ static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
         tv->tv_sec = g_tv.tv_sec + (tv->tv_sec - g_tv.tv_sec) * g_speed;
         tv->tv_usec = g_tv.tv_usec + (tv->tv_usec - g_tv.tv_usec) * g_speed;
 
-        g_printerr("gettimeofday %ld -> %ld,  %ld -> %ld", g_tv.tv_sec, tv->tv_sec, g_tv.tv_usec, tv->tv_usec);
-        
+        // g_printerr("gettimeofday %ld -> %ld,  %ld -> %ld\n", g_tv.tv_sec, tv->tv_sec, g_tv.tv_usec, tv->tv_usec);
     }
     g_modify_time = false;
 

@@ -1,41 +1,5 @@
 #include <MemoryTools.hpp>
 
-// 内存工具 针对so注入情况 魔改了
-long getModuleBase(const char *moduleName)
-{
-    char path[1024], line[1024];
-    sprintf(path, "/proc/self/maps");
-    FILE *file = fopen(path, "r");
-    long len = 0;
-    if (file)
-    {
-        while (fgets(line, sizeof(line), file))
-        {
-            if (strstr(line, moduleName) != NULL)
-            {
-                len = strtoul(line, NULL, 16);
-                break;
-            }
-        }
-    }
-    return len;
-}
-
-bool isLibraryLoaded(const char *libraryName)
-{
-    char line[512] = {0};
-    FILE *fp = fopen("/proc/self/maps", "rt");
-    if (fp != NULL)
-    {
-        while (fgets(line, sizeof(line), fp))
-        {
-            if (strstr(line, libraryName))
-                return true;
-        }
-        fclose(fp);
-    }
-    return false;
-}
 
 // 因为是注入 直接读写
 void readin(unsigned long address, void *buffer, size_t size)

@@ -1,5 +1,6 @@
 // user lib
 #include "UnityCheat.hpp"
+#include "progress.h"
 #include <jni.h>
 
 static size_t OnWriteData(void *buffer, size_t size, size_t nmemb, void *lpVoid)
@@ -300,7 +301,7 @@ EGLBoolean my_EglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
 void dlopen_process(const char *name, void *handle)
 {
-    // LOGD("dlopen: %s", name);
+    LOGD("dlopen: %s", name);
     if (!il2cppHandle)
     {
         if (strstr(name, "libil2cpp.so"))
@@ -408,6 +409,11 @@ void *main_thread(void *)
     // const MethodInfo *timeScale_method = GetMethod_for_Property_Get("Assembly-CSharp", "UnityEngine", "Time", "timeScale");
     // float timeScale = (float)il2cpp_runtime_invoke(timeScale_method, NULL, NULL, NULL);
     // FieldInfo* Time$$timeScale = il2cpp_class_get_field_from_name("UnityEngine.Time", "timeScale");
+    if (Time$$get_timeScale)
+    {
+        LOGD("get get_timeScale: %p", Time$$get_timeScale);
+        LOGI("Time scale is %f \n", Time$$get_timeScale());
+    }
 
 	const MethodInfo *setTime = (MethodInfo*)GetMethod("UnityEngine.CoreModule", "UnityEngine", "Time", "set_timeScale", 1);
     if (setTime)
@@ -420,10 +426,6 @@ void *main_thread(void *)
         Il2CppException* exc;
         il2cpp_runtime_invoke(setTime, nullptr, args, &exc);
     };
-    if (Time$$get_timeScale)
-    {
-        LOGI("Time scale is %f \n", Time$$get_timeScale());
-    }
     SetTimeScale(3.0f);
     if (Time$$set_timeScale)
     {
@@ -466,14 +468,56 @@ void *main_thread(void *)
     pthread_exit(nullptr);
 }
 
-// 先atmain函数执行的 最高执行权重函数
-__attribute__((constructor)) void constructor_main()
+#include <frida-gum.h>
+// compatible frida mode
+__attribute__ ((visibility ("default"))) 
+void example_agent_main(const gchar *data, gboolean *stay_resident)
 {
-    LOGD("YYCheat started");
+    LOGD("use frida mode");
+    *stay_resident = TRUE;
+    GumInterceptor *interceptor;
 
-    pthread_t ptid;
-    // 另开线程 以免阻塞游戏主线程
-    pthread_create(&ptid, nullptr, main_thread, nullptr);
+    gum_init_embedded();
+    interceptor = gum_interceptor_obtain();
 
-    LOGD("YYCheat Finished");
+    il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
+    while (il2cppAddress == 0)
+    { // 动态库已经完全加载
+        il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
+        if (il2cppAddress != 0)
+        {
+            LOGD("libil2cpp.so BaseAddress: %lx", il2cppAddress);
+            break;
+        }
+        usleep(100);
+    }
+    init_il2cpp_api(); // 初始化il2cpp API
+
+    InitResolveFunc(Screen$$get_height, "UnityEngine.Screen::get_height");
+    InitResolveFunc(Screen$$get_width, "UnityEngine.Screen::get_width");
+    // 使用Unity游戏内的导出方法 获取屏幕宽高
+    if (Screen$$get_height && Screen$$get_width)
+    {
+        LOGI("Screen height is %d \nScreen width is %d", Screen$$get_height(), Screen$$get_width());
+    }
+    
+    gum_interceptor_end_transaction(interceptor);
 }
+
+__attribute__ ((visibility ("default"))) 
+void main_entry(const char* str)
+{
+    LOGD("use ptrace mode");
+}
+
+// // 先main_thread函数执行的 最高执行权重函数
+// __attribute__((constructor)) void constructor_main()
+// {
+//     LOGD("YYCheat started");
+//
+//     // pthread_t ptid;
+//     // // 另开线程 以免阻塞游戏主线程
+//     // pthread_create(&ptid, nullptr, main_thread, nullptr);
+//
+//     LOGD("YYCheat Finished");
+// }

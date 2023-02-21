@@ -7,5 +7,7 @@ add_library(utils_static STATIC
         ${CMAKE_CURRENT_SOURCE_DIR}/AndroidProp.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MapTools.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MemoryTools.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/selinux.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/progress.cc
         )
 target_link_libraries(utils_static log)
