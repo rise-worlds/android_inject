@@ -1,7 +1,7 @@
 #include <fcntl.h>
 #include <frida-gum.h>
 #include <unistd.h>
-#include <android/log.h>
+#include <Logger.hpp>
 
 #define TEST_TYPE_CALLBACK_LISTENER (my_callback_listener_get_type())
 G_DECLARE_FINAL_TYPE(MyCallbackListener, my_callback_listener, MY,
@@ -48,6 +48,7 @@ void example_agent_main(const gchar *data, gboolean *stay_resident)
     gum_init_embedded();
 
     g_printerr("example_agent_main(\"%s\")\n", data);
+    LOGD("example_agent_main(\"%s\")\n", data);
 
     interceptor = gum_interceptor_obtain();
     listener = my_callback_listener_new();
@@ -61,6 +62,7 @@ void example_agent_main(const gchar *data, gboolean *stay_resident)
 
     GumAddress address = gum_module_find_export_by_name("libtimetest.so", "Java_com_example_timetest_MainActivity_stringFromJNI");
     g_printerr("stringFromJNI addr:%d\n", address);
+    LOGD("stringFromJNI addr:%d", address);
     if (address > 0)
     {
         gum_interceptor_attach(interceptor,
@@ -87,6 +89,7 @@ void example_agent_main(const gchar *data, gboolean *stay_resident)
 static int open_hook(const char *path, int oflag, ...)
 {
     g_printerr("open(\"%s\", 0x%x)\n", path, oflag);
+    LOGD("open(\"%s\", 0x%x)", path, oflag);
 
     return open(path, oflag);
 }
@@ -94,7 +97,8 @@ static int open_hook(const char *path, int oflag, ...)
 static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
 {
     int result = gettimeofday(tv, tz);
-    // g_printerr("gettimeofday %p, %p %d", tv, tz, result);
+    // g_printerr("gettimeofday %p, %p %d\n", tv, tz, result);
+    // LOGD("gettimeofday %p, %p %d", tv, tz, result);
     // if (result == 0 && tv != NULL)
     if (g_modify_time)
     {
@@ -107,6 +111,7 @@ static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
         tv->tv_usec = g_tv.tv_usec + (tv->tv_usec - g_tv.tv_usec) * g_speed;
 
         // g_printerr("gettimeofday %ld -> %ld,  %ld -> %ld\n", g_tv.tv_sec, tv->tv_sec, g_tv.tv_usec, tv->tv_usec);
+        // LOGD("gettimeofday %ld -> %ld,  %ld -> %ld", g_tv.tv_sec, tv->tv_sec, g_tv.tv_usec, tv->tv_usec);
     }
     g_modify_time = false;
 
@@ -116,7 +121,8 @@ static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
 static int clock_gettime_hook(clockid_t clock, struct timespec *ts)
 {
     int result = clock_gettime(clock, ts);
-    // g_printerr("clock_gettime %p, %p %d", &clock, ts, result);
+    // g_printerr("clock_gettime %p, %p %d\n", &clock, ts, result);
+    // LOGD("clock_gettime %p, %p %d", &clock, ts, result);
     if (result == 0 && ts != NULL)
     {
         if (g_ts.tv_sec == 0)
@@ -127,7 +133,8 @@ static int clock_gettime_hook(clockid_t clock, struct timespec *ts)
         ts->tv_sec = g_ts.tv_sec + (ts->tv_sec - g_ts.tv_sec) * g_speed;
         ts->tv_nsec = g_ts.tv_nsec + (ts->tv_nsec - g_ts.tv_nsec) * g_speed;
 
-        g_printerr("clock_gettime time %ld -> %ld", g_ts.tv_sec, ts->tv_sec);
+        // g_printerr("clock_gettime time %ld -> %ld\n", g_ts.tv_sec, ts->tv_sec);
+        // LOGD("clock_gettime time %ld -> %ld", g_ts.tv_sec, ts->tv_sec);
     }
 
     return result;
@@ -147,7 +154,7 @@ static void
 my_callback_listener_on_enter(GumInvocationListener *listener,
                                 GumInvocationContext *context)
 {
-    __android_log_print(ANDROID_LOG_DEBUG, "yy-hook", "enter stringFromJNI %p -> %p", listener, context);
+    LOGD("enter stringFromJNI %p -> %p", listener, context);
     MyCallbackListener *self = MY_CALLBACK_LISTENER(listener);
     MyHookId hook_id = GUM_IC_GET_FUNC_DATA(context, MyHookId);
 
@@ -163,7 +170,7 @@ static void
 my_callback_listener_on_leave(GumInvocationListener *listener,
                                 GumInvocationContext *context)
 {
-    __android_log_print(ANDROID_LOG_DEBUG, "yy-hook", "leave stringFromJNI %p -> %p", listener, context);
+    LOGD("leave stringFromJNI %p -> %p", listener, context);
     MyCallbackListener *self = MY_CALLBACK_LISTENER(listener);
 
     g_modify_time = false;

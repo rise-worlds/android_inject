@@ -73,6 +73,8 @@
         "locale": "cpp",
         "filesystem": "cpp",
         "memorytools.hpp": "c",
-        "progress.h": "c"
+        "progress.h": "c",
+        "__threading_support": "cpp",
+        "thread": "cpp"
     },
 }

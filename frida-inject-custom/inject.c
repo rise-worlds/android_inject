@@ -100,9 +100,11 @@ int main(int argc, char *argv[])
         result = 1;
     }
 
+    g_printerr("inject end \n");
     frida_injector_close_sync(injector, NULL, NULL);
     g_object_unref(injector);
 
+    g_printerr("frida deinit \n");
     frida_deinit();
 
     return result;

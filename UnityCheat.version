@@ -1,0 +1,4 @@
+{
+  global:example_agent_main;main_entry;
+  local:*;
+};

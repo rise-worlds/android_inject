@@ -2,18 +2,19 @@
 #include "UnityCheat.hpp"
 #include "progress.h"
 #include <jni.h>
+#include <frida-gum.h>
 
-static size_t OnWriteData(void *buffer, size_t size, size_t nmemb, void *lpVoid)
-{
-    std::string *str = dynamic_cast<std::string *>((std::string *)lpVoid);
-    if (NULL == str || NULL == buffer)
-    {
-        return -1;
-    }
-    char *pData = (char *)buffer;
-    str->append(pData, size * nmemb);
-    return nmemb;
-}
+// static size_t OnWriteData(void *buffer, size_t size, size_t nmemb, void *lpVoid)
+// {
+//     std::string *str = dynamic_cast<std::string *>((std::string *)lpVoid);
+//     if (NULL == str || NULL == buffer)
+//     {
+//         return -1;
+//     }
+//     char *pData = (char *)buffer;
+//     str->append(pData, size * nmemb);
+//     return nmemb;
+// }
 
 // // 修改 - 判断怪物状态时对怪物距离范围的判断 实现AOE技能全屏
 // HOOK_DEF(int, MobStatusMaster_get_Size, void *__this, void *methodInfo)
@@ -468,56 +469,28 @@ void *main_thread(void *)
     pthread_exit(nullptr);
 }
 
-#include <frida-gum.h>
-// compatible frida mode
-__attribute__ ((visibility ("default"))) 
+// frida mode
+extern "C" __attribute__ ((visibility ("default")))
 void example_agent_main(const gchar *data, gboolean *stay_resident)
 {
     LOGD("use frida mode");
     *stay_resident = TRUE;
-    GumInterceptor *interceptor;
-
-    gum_init_embedded();
-    interceptor = gum_interceptor_obtain();
-
-    il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
-    while (il2cppAddress == 0)
-    { // 动态库已经完全加载
-        il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
-        if (il2cppAddress != 0)
-        {
-            LOGD("libil2cpp.so BaseAddress: %lx", il2cppAddress);
-            break;
-        }
-        usleep(100);
-    }
-    init_il2cpp_api(); // 初始化il2cpp API
-
-    InitResolveFunc(Screen$$get_height, "UnityEngine.Screen::get_height");
-    InitResolveFunc(Screen$$get_width, "UnityEngine.Screen::get_width");
-    // 使用Unity游戏内的导出方法 获取屏幕宽高
-    if (Screen$$get_height && Screen$$get_width)
-    {
-        LOGI("Screen height is %d \nScreen width is %d", Screen$$get_height(), Screen$$get_width());
-    }
-    
-    gum_interceptor_end_transaction(interceptor);
 }
 
-__attribute__ ((visibility ("default"))) 
+extern "C" __attribute__ ((visibility ("default")))
 void main_entry(const char* str)
 {
     LOGD("use ptrace mode");
 }
 
-// // 先main_thread函数执行的 最高执行权重函数
-// __attribute__((constructor)) void constructor_main()
-// {
-//     LOGD("YYCheat started");
-//
-//     // pthread_t ptid;
-//     // // 另开线程 以免阻塞游戏主线程
-//     // pthread_create(&ptid, nullptr, main_thread, nullptr);
-//
-//     LOGD("YYCheat Finished");
-// }
+// 先main_thread函数执行的 最高执行权重函数
+__attribute__((constructor)) void constructor_main()
+{
+    LOGD("YYCheat started");
+
+    pthread_t ptid;
+    // 另开线程 以免阻塞游戏主线程
+    pthread_create(&ptid, nullptr, main_thread, nullptr);
+
+    LOGD("YYCheat Finished");
+}

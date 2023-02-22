@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fPIE")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fPIE")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL, -Wl,--gc-sections")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fPIE -pie -Wl,-z,relro,-z,noexecstack,--gc-sections")
 # set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../assets/shark_inject/${CMAKE_ANDROID_ARCH_ABI}/)
 
@@ -50,3 +51,8 @@ add_subdirectory(frida-inject-custom)
 
 add_library(UnityCheat SHARED UnityCheat.cpp)
 target_link_libraries(UnityCheat dobby frida-gum utils_static)
+set_target_properties(UnityCheat PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
+
+add_library(UnityCheat2 SHARED UnityCheat2.cpp)
+target_link_libraries(UnityCheat2 frida-gum utils_static)
+set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
