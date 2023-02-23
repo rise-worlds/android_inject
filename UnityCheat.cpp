@@ -470,15 +470,13 @@ void *main_thread(void *)
 }
 
 // frida mode
-extern "C" __attribute__ ((visibility ("default")))
-void example_agent_main(const gchar *data, gboolean *stay_resident)
+YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 {
     LOGD("use frida mode");
     *stay_resident = TRUE;
 }
 
-extern "C" __attribute__ ((visibility ("default")))
-void main_entry(const char* str)
+YY_API void main_entry(const char* str)
 {
     LOGD("use ptrace mode");
 }

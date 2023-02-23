@@ -26,8 +26,7 @@ void (*Time$$set_fixedDeltaTime)(float);    // 预定义一个方法
 // static int gettimeofday_hook(struct timeval *tv, struct timezone *tz);
 // static int clock_gettime_hook(clockid_t clock, struct timespec *ts);
 
-// __attribute__((__visibility__("default")))
-extern "C" __attribute__((visibility("default"))) void example_agent_main(const gchar *data, gboolean *stay_resident)
+YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 {
     GumInterceptor *interceptor;
 

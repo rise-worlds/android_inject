@@ -92,8 +92,7 @@ __attribute__((constructor)) static void ctor()
     LOGE("start hook");
 }
 
-__attribute__ ((visibility ("default"))) 
-void main_entry(const char* str)
+YY_API void main_entry(const char* str)
 {
     LOGE("enter main_entry");
 
