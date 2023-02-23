@@ -1,8 +1,8 @@
 
-#include "selinux.h"
+#include "selinux.hpp"
 #include "shark_inject.h"
 #include <string.h>
-#include "progress.h"
+#include "progress.hpp"
 
 int main(int argc, char **argv) {
     pid_t target_pid;

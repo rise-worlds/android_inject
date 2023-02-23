@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include <limits.h>
 
-#include "selinux.h"
+#include "selinux.hpp"
 
 char *SELinux::_selinux_mnt = nullptr;
 

@@ -1,6 +1,6 @@
 // user lib
 #include "UnityCheat.hpp"
-#include "progress.h"
+#include "progress.hpp"
 #include <jni.h>
 #include <frida-gum.h>
 

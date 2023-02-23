@@ -1,4 +1,4 @@
-#include "progress.h"
+#include "progress.hpp"
 #include <stdio.h>
 #include <unistd.h>
 #include <dirent.h>
