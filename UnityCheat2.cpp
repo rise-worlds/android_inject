@@ -112,14 +112,17 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
     // g_object_unref (interceptor);
     // gum_deinit_embedded();
 
-    // gp_run = std::make_shared<std::thread>([]()
-    //                 {
-    //                     while(1) {
-    //                         LOGD("seconds");
-    //                         std::this_thread::sleep_for(std::chrono::seconds(1));
-    //                     }
-    //                 });
-    // gp_run->join();
+    gp_run = std::make_shared<std::thread>([]()
+                    {
+                        while(1) {
+                            // LOGD("seconds");
+                            if (Time$$set_timeScale) {
+                                Time$$set_timeScale(10.0f);
+                            }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        }
+                    });
+    gp_run->join();
 }
 
 // static int open_hook(const char *path, int oflag, ...)
