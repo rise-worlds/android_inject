@@ -13,7 +13,7 @@
       "cmakeSettings": {
         "CMAKE_INSTALL_PREFIX": "${workspaceFolder}/out/android/${variant:buildType}/${variant:abi}",
         "ANDROID_TOOLCHAIN": "clang",
-        "ANDROID_NATIVE_API_LEVEL": 21,
+        "ANDROID_NATIVE_API_LEVEL": 24,
         "ANDROID_STL": "c++_static",
         "ANDROID_CPP_FEATURES": "rtti exceptions",
         "CMAKE_C_COMPILER": "${env:ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe",

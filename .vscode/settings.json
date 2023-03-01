@@ -35,28 +35,32 @@
                     "short": "armv7",
                     "long": "abi for armeabi-v7a",
                     "settings": {
-                        "ANDROID_ABI": "armeabi-v7a"
+                        "ANDROID_ABI": "armeabi-v7a",
+                        "VCPKG_TARGET_TRIPLET": "arm-android"
                     }
                 },
                 "arm64-v8a": {
                     "short": "arm64",
                     "long": "abi for arm64-v8a",
                     "settings": {
-                        "ANDROID_ABI": "arm64-v8a"
+                        "ANDROID_ABI": "arm64-v8a",
+                        "VCPKG_TARGET_TRIPLET": "arm64-android"
                     }
                 },
                 "x86": {
                     "short": "x86",
                     "long": "abi for x86",
                     "settings": {
-                        "ANDROID_ABI": "x86"
+                        "ANDROID_ABI": "x86",
+                        "VCPKG_TARGET_TRIPLET": "x86-android"
                     }
                 },
                 "x86_64": {
                     "short": "x86_64",
                     "long": "abi for x86_64",
                     "settings": {
-                        "ANDROID_ABI": "x86_64"
+                        "ANDROID_ABI": "x86_64",
+                        "VCPKG_TARGET_TRIPLET": "x64-android"
                     }
                 }
             }
@@ -76,6 +80,17 @@
         "progress.h": "c",
         "__threading_support": "cpp",
         "thread": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "__bit_reference": "cpp",
+        "__hash_table": "cpp",
+        "__string": "cpp",
+        "__tree": "cpp",
+        "algorithm": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp"
     },
 }
