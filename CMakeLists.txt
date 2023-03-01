@@ -34,11 +34,23 @@ elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
     include($ENV{VCPKG_ROOT}/triplets/community/x86-android.cmake)
 endif()
 
+add_definitions(
+    -DFMT_HEADER_ONLY
+    -DSPDLOG_FMT_EXTERNAL
+)
+
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/
+    ${CMAKE_CURRENT_SOURCE_DIR}/asio
+    ${CMAKE_CURRENT_SOURCE_DIR}/fmt/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/spdlog/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/zlib
+    ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip
+)
+
 set(DOBBY_GENERATE_SHARED OFF)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dobby)
-set(FMT_HEADER_ONLY ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/fmt)
-set(SPDLOG_FMT_EXTERNAL ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/spdlog)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/nlohmann_json)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/zlib)
@@ -72,15 +84,6 @@ add_library(UnityCheat2 SHARED UnityCheat2.cpp)
 target_link_libraries(UnityCheat2 frida-gum utils_static)
 set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
 
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/spdlog/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/zlib
-    ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip
-)
-# ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.h
-# ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.c
-# ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/ioapi.h
-# ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/ioapi.c
 add_executable(CheckUnity CheckUnity.cpp 
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.c
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/ioapi.c
