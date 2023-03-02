@@ -2,7 +2,7 @@
 // detail/config.hpp
 // ~~~~~~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2022 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2023 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -669,6 +669,19 @@
 # define ASIO_ALIGNOF(T) 1
 # define ASIO_DEFAULT_ALIGN 1
 #endif // defined(ASIO_HAS_ALIGNOF)
+
+// Support for user-defined literals.
+#if !defined(ASIO_HAS_USER_DEFINED_LITERALS)
+# if !defined(ASIO_DISABLE_USER_DEFINED_LITERALS)
+#  if (__cplusplus >= 201103)
+#   define ASIO_HAS_USER_DEFINED_LITERALS 1
+#  elif defined(ASIO_MSVC)
+#   if (_MSC_VER >= 1900 && _MSVC_LANG >= 201103)
+#    define ASIO_HAS_USER_DEFINED_LITERALS 1
+#   endif // (_MSC_VER >= 1900 && _MSVC_LANG >= 201103)
+#  endif // defined(ASIO_MSVC)
+# endif // !defined(ASIO_DISABLE_USER_DEFINED_LITERALS)
+#endif // !defined(ASIO_HAS_USER_DEFINED_LITERALS)
 
 // Standard library support for aligned allocation.
 #if !defined(ASIO_HAS_STD_ALIGNED_ALLOC)
