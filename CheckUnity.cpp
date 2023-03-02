@@ -4,7 +4,8 @@
 #include <ioapi.h>
 #include <unzip.h>
 #include <cstring>
-#define SPDLOG_ACTIVE_LEVEL 0
+#include <thread>
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
 #include <asio2/asio2.hpp>
 #include <asio2/tcp/tcp_server.hpp>
@@ -50,14 +51,14 @@ public:
             if (p == end)
                 break;
 
-            int length = std::uint8_t(*p); // get content length
+            int length = std::uint16_t(*p); // get content length
 
-            p++;
+            p += 2;
             if (p == end)
                 break;
 
-            if (end - p >= length)
-                return std::pair(p + length, true);
+            if (end - p >= length + 2)
+                return std::pair(p + length + 2, true);
 
             break;
         }
@@ -91,7 +92,7 @@ class svr_listener
 public:
     void on_recv(std::shared_ptr<asio2::tcp_session> &session_ptr, std::string_view data)
     {
-        printf("recv : %zu %.*s\n", data.size(), (int)data.size(), data.data());
+        SPDLOG_INFO("recv : {} {}", data.size(), data.data());
 
         // this is just a demo to show :
         // even if we force one packet data to be sent twice,
@@ -105,30 +106,30 @@ public:
     {
         session_ptr->no_delay(true);
 
-        printf("client enter : %s %u %s %u\n",
-               session_ptr->remote_address().c_str(), session_ptr->remote_port(),
-               session_ptr->local_address().c_str(), session_ptr->local_port());
+        SPDLOG_INFO("client enter : {} {} {} {}",
+               session_ptr->remote_address(), session_ptr->remote_port(),
+               session_ptr->local_address(), session_ptr->local_port());
     }
 
     void on_disconnect(std::shared_ptr<asio2::tcp_session> &session_ptr)
     {
-        printf("client leave : %s %u %s\n",
-               session_ptr->remote_address().c_str(), session_ptr->remote_port(),
-               asio2::last_error_msg().c_str());
+        SPDLOG_INFO("client leave : {} {} {}",
+               session_ptr->remote_address(), session_ptr->remote_port(),
+               asio2::last_error_msg());
     }
 
     void on_start(asio2::tcp_server &server)
     {
-        printf("start tcp server character : %s %u %d %s\n",
-               server.listen_address().c_str(), server.listen_port(),
-               asio2::last_error_val(), asio2::last_error_msg().c_str());
+        SPDLOG_INFO("start tcp server character : {} {} {} {}",
+               server.listen_address(), server.listen_port(),
+               asio2::last_error_val(), asio2::last_error_msg());
     }
 
     void on_stop(asio2::tcp_server &server)
     {
-        printf("stop tcp server character : %s %u %d %s\n",
-               server.listen_address().c_str(), server.listen_port(),
-               asio2::last_error_val(), asio2::last_error_msg().c_str());
+        SPDLOG_INFO("stop tcp server character : {} {} {} {}",
+               server.listen_address(), server.listen_port(),
+               asio2::last_error_val(), asio2::last_error_msg());
     }
 };
 
@@ -202,8 +203,10 @@ int main(int argv, const char **args)
         .bind_stop(&svr_listener::on_stop, listener, std::ref(server));              // not use std::bind
 
     // Split data with string
-    server.start("127.0.0.1", 10086, match_role('#'));
+    server.start("0.0.0.0", 10086, match_role('#'));
 
     while (std::getchar() != '\n')
-        ;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    server.stop();
 }

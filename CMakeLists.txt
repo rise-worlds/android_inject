@@ -88,4 +88,6 @@ add_executable(CheckUnity CheckUnity.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.c
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/ioapi.c
     )
+target_include_directories(CheckUnity PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
+add_dependencies(${PROJECT_NAME} zlibstatic)
 target_link_libraries(CheckUnity zlibstatic)
