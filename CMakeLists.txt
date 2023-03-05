@@ -6,32 +6,68 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_definitions(-DANDROID)
-set(VCPKG_CMAKE_SYSTEM_NAME Android)
+if (MSVC)
+    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+      add_compile_options(
+          /bigobj       # large object file format
+          #/permissive-  # strict C++
+          #/wd4503      # decorated name length exceeded, name was truncated
+          /W4           # enable all warnings
+          /JMC
+          )
+  
+      set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /std:c++17 /MTd")
+      set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /std:c++17 /Zi /Ob2 /Oi /Ot /MT")
+  
+      set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
+    else()
+      add_compile_options(
+          /bigobj       # large object file format
+          #/permissive-  # strict C++
+          #/wd4503      # decorated name length exceeded, name was truncated
+          /W4           # enable all warnings
+          /MP           # Multi-processor compilation
+          /JMC
+          /Zc:__cplusplus
+          )
+  
+      set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /std:c++17 /MTd /ZI")
+      set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /std:c++17 /Zi /Ob2 /Oi /Ot /GL /MT")
+  
+      set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fPIE")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fPIE")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL, -Wl,--gc-sections")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fPIE -pie -Wl,-z,relro,-z,noexecstack,--gc-sections")
-# set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../assets/shark_inject/${CMAKE_ANDROID_ARCH_ABI}/)
+      set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
+      set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG:incremental")
+    endif ()
+else()
+    add_definitions(-DANDROID)
+    set(VCPKG_CMAKE_SYSTEM_NAME Android)
 
-if (CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
-    set(VCPKG_TARGET_TRIPLET arm64-android)
-    include($ENV{VCPKG_ROOT}/triplets/community/arm64-android.cmake)
-elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=softfp -mfpu=vfpv3-d16")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfloat-abi=softfp -mfpu=vfpv3-d16")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--fix-cortex-a8")
-    set(VCPKG_TARGET_TRIPLET arm-android)
-    include($ENV{VCPKG_ROOT}/triplets/community/arm-android.cmake)
-elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
-    set(VCPKG_TARGET_TRIPLET x64-android)
-    include($ENV{VCPKG_ROOT}/triplets/community/x64-android.cmake)
-elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpmath=sse -mstackrealign")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpmath=sse -mstackrealign")
-    set(VCPKG_TARGET_TRIPLET x86-android)
-    include($ENV{VCPKG_ROOT}/triplets/community/x86-android.cmake)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fPIE")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fPIE")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL, -Wl,--gc-sections")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fPIE -pie -Wl,--exclude-libs,ALL, -Wl,-z,relro,-z,noexecstack,--gc-sections")
+    # set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../assets/shark_inject/${CMAKE_ANDROID_ARCH_ABI}/)
+
+    if (CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+        set(VCPKG_TARGET_TRIPLET arm64-android)
+        include($ENV{VCPKG_ROOT}/triplets/community/arm64-android.cmake)
+    elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=softfp -mfpu=vfpv3-d16")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfloat-abi=softfp -mfpu=vfpv3-d16")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--fix-cortex-a8")
+        set(VCPKG_TARGET_TRIPLET arm-android)
+        include($ENV{VCPKG_ROOT}/triplets/community/arm-android.cmake)
+    elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+        set(VCPKG_TARGET_TRIPLET x64-android)
+        include($ENV{VCPKG_ROOT}/triplets/community/x64-android.cmake)
+    elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpmath=sse -mstackrealign")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpmath=sse -mstackrealign")
+        set(VCPKG_TARGET_TRIPLET x86-android)
+        include($ENV{VCPKG_ROOT}/triplets/community/x86-android.cmake)
+    endif()
+
 endif()
 
 add_definitions(
@@ -43,6 +79,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/
     ${CMAKE_CURRENT_SOURCE_DIR}/asio
     ${CMAKE_CURRENT_SOURCE_DIR}/fmt/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/nlohmann_json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/spdlog/include
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip
@@ -78,11 +115,9 @@ add_subdirectory(frida-inject-custom)
 
 add_library(UnityCheat SHARED UnityCheat.cpp)
 target_link_libraries(UnityCheat dobby frida-gum utils_static)
-set_target_properties(UnityCheat PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
 
 add_library(UnityCheat2 SHARED UnityCheat2.cpp)
 target_link_libraries(UnityCheat2 frida-gum utils_static)
-set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
 
 add_executable(CheckUnity CheckUnity.cpp 
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.c
@@ -90,4 +125,10 @@ add_executable(CheckUnity CheckUnity.cpp
     )
 target_include_directories(CheckUnity PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
 add_dependencies(${PROJECT_NAME} zlibstatic)
-target_link_libraries(CheckUnity zlibstatic)
+target_link_libraries(CheckUnity zlibstatic frida-core)
+
+if (CMAKE_BUILD_TYPE MATCHES "^Rel.*$")
+set_target_properties(UnityCheat PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
+set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
+set_target_properties(CheckUnity PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/CheckUnity.version")
+endif()

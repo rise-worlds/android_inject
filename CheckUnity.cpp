@@ -9,135 +9,49 @@
 #include <spdlog/spdlog.h>
 #include <asio2/asio2.hpp>
 #include <asio2/tcp/tcp_server.hpp>
+#include <nlohmann/json.hpp>
+#include <frida-core.h>
+#include <sys/xattr.h>
 
-// the byte 1    head   (1 bytes) : #
-// the byte 2    length (1 bytes) : the body length
-// the byte 3... body   (n bytes) : the body content
-class match_role
+struct aop_log
 {
-public:
-    explicit match_role(char c) : c_(c) {}
-
-    // The first member of the
-    // return value is an iterator marking one-past-the-end of the bytes that have
-    // been consumed by the match function.This iterator is used to calculate the
-    // begin parameter for any subsequent invocation of the match condition.The
-    // second member of the return value is true if a match has been found, false
-    // otherwise.
-    template <typename Iterator>
-    std::pair<Iterator, bool> operator()(Iterator begin, Iterator end) const
+    bool before(http::web_request &req, http::web_response &rep)
     {
-        Iterator p = begin;
-        while (p != end)
-        {
-            // how to convert the Iterator to char*
-            [[maybe_unused]] const char *buf = &(*p);
-
-            // eg : How to close illegal clients
-            if (*p != c_)
-            {
-                // method 1:
-                // call the session stop function directly, you need add the init function, see below.
-                session_ptr_->stop();
-                break;
-
-                // method 2:
-                // return the matching success here and then determine the number of bytes received
-                // in the on_recv callback function, if it is 0, we close the connection in on_recv.
-                // return std::pair(begin, true); // head character is not #, return and kill the client
-            }
-
-            p++;
-            if (p == end)
-                break;
-
-            int length = std::uint16_t(*p); // get content length
-
-            p += 2;
-            if (p == end)
-                break;
-
-            if (end - p >= length + 2)
-                return std::pair(p + length + 2, true);
-
-            break;
-        }
-        return std::pair(begin, false);
+        asio2::ignore_unused(rep);
+        SPDLOG_DEBUG("aop_log before {}", req.method_string().data());
+        return true;
     }
-
-    // the asio2 framework will call this function immediately after the session is created,
-    // you can save the session pointer into a member variable, or do something else.
-    void init(std::shared_ptr<asio2::tcp_session> &session_ptr)
+    bool after(std::shared_ptr<asio2::http_session> &session_ptr, http::web_request &req, http::web_response &rep)
     {
-        session_ptr_ = session_ptr;
-    }
-
-private:
-    char c_;
-
-    // note : use a shared_ptr to save the session does not cause circular reference.
-    std::shared_ptr<asio2::tcp_session> session_ptr_;
-};
-
-namespace asio
-{
-    template <>
-    struct is_match_condition<match_role> : public std::true_type
-    {
-    };
-}
-
-class svr_listener
-{
-public:
-    void on_recv(std::shared_ptr<asio2::tcp_session> &session_ptr, std::string_view data)
-    {
-        SPDLOG_INFO("recv : {} {}", data.size(), data.data());
-
-        // this is just a demo to show :
-        // even if we force one packet data to be sent twice,
-        // but the client must recvd whole packet once
-        session_ptr->async_send(data.substr(0, data.size() / 2));
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        session_ptr->async_send(data.substr(data.size() / 2));
-    }
-
-    void on_connect(std::shared_ptr<asio2::tcp_session> &session_ptr)
-    {
-        session_ptr->no_delay(true);
-
-        SPDLOG_INFO("client enter : {} {} {} {}",
-               session_ptr->remote_address(), session_ptr->remote_port(),
-               session_ptr->local_address(), session_ptr->local_port());
-    }
-
-    void on_disconnect(std::shared_ptr<asio2::tcp_session> &session_ptr)
-    {
-        SPDLOG_INFO("client leave : {} {} {}",
-               session_ptr->remote_address(), session_ptr->remote_port(),
-               asio2::last_error_msg());
-    }
-
-    void on_start(asio2::tcp_server &server)
-    {
-        SPDLOG_INFO("start tcp server character : {} {} {} {}",
-               server.listen_address(), server.listen_port(),
-               asio2::last_error_val(), asio2::last_error_msg());
-    }
-
-    void on_stop(asio2::tcp_server &server)
-    {
-        SPDLOG_INFO("stop tcp server character : {} {} {} {}",
-               server.listen_address(), server.listen_port(),
-               asio2::last_error_val(), asio2::last_error_msg());
+        ASIO2_ASSERT(asio2::get_current_caller<std::shared_ptr<asio2::http_session>>().get() == session_ptr.get());
+        asio2::ignore_unused(session_ptr, req, rep);
+        SPDLOG_DEBUG("aop_log after");
+        return true;
     }
 };
 
-bool CheckUnity(const char *zipFilePath)
+struct aop_check
+{
+    bool before(std::shared_ptr<asio2::http_session> &session_ptr, http::web_request &req, http::web_response &rep)
+    {
+        ASIO2_ASSERT(asio2::get_current_caller<std::shared_ptr<asio2::http_session>>().get() == session_ptr.get());
+        asio2::ignore_unused(session_ptr, req, rep);
+        SPDLOG_DEBUG("aop_check before");
+        return true;
+    }
+    bool after(http::web_request &req, http::web_response &rep)
+    {
+        asio2::ignore_unused(req, rep);
+        SPDLOG_DEBUG("aop_check after");
+        return true;
+    }
+};
+
+bool CheckUnity(const std::string& zipFilePath)
 {
     bool find = false;
     // 1. open zip
-    unzFile zipfile = unzOpen(zipFilePath);
+    unzFile zipfile = unzOpen(zipFilePath.c_str());
     if (zipfile == NULL)
     {
         SPDLOG_ERROR("open zip failed , path = {}", zipFilePath);
@@ -185,28 +99,182 @@ bool CheckUnity(const char *zipFilePath)
     return find;
 }
 
+int find_pid_of(const char *process_name);
+int inject(const char* process_name, const char* so_path)
+{
+    int result = 0;
+
+    FridaInjector *injector;
+    int pid;
+    GError *error;
+    guint id;
+    const char *context = "u:object_r:frida_file:s0";
+
+    pid = find_pid_of(process_name);
+    if (pid <= 0)
+    {
+        pid = std::atoi(process_name);
+        if (pid <= 0)
+        {
+            goto bad_usage;
+        }
+    }
+    SPDLOG_DEBUG("target={} so={} target_pid={}", process_name, so_path, pid);
+
+    if (setxattr(so_path, XATTR_NAME_SELINUX, context, strlen(context) + 1, 0) != 0)
+        goto setxattr_failed;
+
+    injector = frida_injector_new();
+
+    error = NULL;
+    id = frida_injector_inject_library_file_sync(injector, pid, so_path, "example_agent_main", "example data", NULL, &error);
+    if (error != NULL)
+    {
+        SPDLOG_DEBUG("{}", error->message);
+        g_clear_error(&error);
+
+        result = 1;
+    }
+
+    SPDLOG_DEBUG("inject end");
+    frida_injector_close_sync(injector, NULL, NULL);
+    g_object_unref(injector);
+
+    return result;
+
+bad_usage:
+{
+    SPDLOG_ERROR("process {} not found", process_name);
+    frida_deinit();
+    return 2;
+}
+setxattr_failed:
+{
+    SPDLOG_ERROR("Failed to set SELinux permissions");
+    frida_deinit();
+    return 3;
+}
+
+    return 0;
+}
+
 int main(int argv, const char **args)
 {
-    // bool result = CheckUnity(args[1]);
+    spdlog::set_level(spdlog::level::debug);
+    
+    frida_init();
+    frida_selinux_patch_policy();
 
-    // SPDLOG_INFO("currect apk is {} app", result ? "Unity 3D" : "not Unity 3D");
+    asio2::http_server server;
 
-    asio2::tcp_server server;
-    svr_listener listener;
+    server.bind_recv([&](http::web_request &req, http::web_response &rep)
+                     {
+                        asio2::ignore_unused(req, rep);
+                        // all http and websocket request will goto here first.
+                        SPDLOG_INFO("path: {}, query: {}", req.path(), req.query()); })
+        .bind_connect([](auto &session_ptr)
+                      {
+                          SPDLOG_INFO("client enter : {} {} {} {}",
+                                 session_ptr->remote_address(), session_ptr->remote_port(),
+                                 session_ptr->local_address(), session_ptr->local_port());
+                          // session_ptr->set_response_mode(asio2::response_mode::manual);
+                      })
+        .bind_disconnect([](auto &session_ptr)
+                         { SPDLOG_INFO("client leave : {} {} {}",
+                                  session_ptr->remote_address(), session_ptr->remote_port(),
+                                  asio2::last_error_msg()); })
+        .bind_start([&]()
+                    { SPDLOG_INFO("start http server : {} {} {} {}",
+                             server.listen_address(), server.listen_port(),
+                             asio2::last_error_val(), asio2::last_error_msg()); })
+        .bind_stop([&]()
+                   { SPDLOG_INFO("stop http server : {} {}",
+                            asio2::last_error_val(), asio2::last_error_msg()); });
 
-    // bind member function
-    server
-        .bind_recv(&svr_listener::on_recv, listener)        // by reference
-        .bind_connect(&svr_listener::on_connect, &listener) // by pointer
-        .bind_disconnect(&svr_listener::on_disconnect, &listener)
-        .bind_start(std::bind(&svr_listener::on_start, &listener, std::ref(server))) //     use std::bind
-        .bind_stop(&svr_listener::on_stop, listener, std::ref(server));              // not use std::bind
+    server.bind<http::verb::post>("/app_u3d", [](std::shared_ptr<asio2::http_session> &session_ptr, http::web_request &req, http::web_response &rep) {
+        asio2::ignore_unused(session_ptr);
+        try {
+            nlohmann::json json = nlohmann::json::parse(req.body());
+            bool result = CheckUnity(json["path"]);
+            std::string content = fmt::format("{{\"name\" : \"{}\", \"result\" : {} }}", json["name"].get<std::string>(), result ? "true" : "false");
+            rep.fill_json(content);
+        }
+        catch(const nlohmann::detail::exception&) {
+            rep.fill_page(http::status::bad_request);
+        }
+    }, aop_check{});
 
-    // Split data with string
-    server.start("0.0.0.0", 10086, match_role('#'));
+    server.bind<http::verb::post>("/inject", [](http::web_request& req, http::web_response& rep) {
+        try {
+            nlohmann::json json = nlohmann::json::parse(req.body());
+            auto process_name = json["name"].get<std::string>();
+            auto so_path = json["so"].get<std::string>();
+            auto result = inject(process_name.c_str(), so_path.c_str());
+            std::string content = fmt::format("{{\"name\" : \"{}\", \"result\" : {} }}", json["name"].get<std::string>(), result);
+            rep.fill_json(content);
+        }
+        catch(const nlohmann::detail::exception&) {
+            rep.fill_page(http::status::bad_request);
+        }
+    }, aop_check{});
+
+    server.bind_not_found([](http::web_request &req, http::web_response &rep)
+                          {
+        asio2::ignore_unused(req);
+        rep.fill_page(http::status::not_found); });
+
+    server.start("0.0.0.0", 10086);
 
     while (std::getchar() != '\n')
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     server.stop();
+
+    SPDLOG_DEBUG("frida deinit");
+    frida_deinit();
+}
+
+int find_pid_of(const char *process_name)
+{
+    int id;
+    pid_t pid = -1;
+    DIR *dir;
+    FILE *fp;
+    char filename[32];
+    char cmdline[256];
+
+    struct dirent *entry;
+
+    if (process_name == NULL)
+        return -1;
+
+    dir = opendir("/proc");
+    if (dir == NULL)
+        return -1;
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        id = atoi(entry->d_name);
+        if (id != 0)
+        {
+            sprintf(filename, "/proc/%d/cmdline", id);
+            fp = fopen(filename, "r");
+            if (fp)
+            {
+                fgets(cmdline, sizeof(cmdline), fp);
+                fclose(fp);
+
+                if (strcmp(process_name, cmdline) == 0)
+                {
+                    /* process found */
+                    pid = id;
+                    break;
+                }
+            }
+        }
+    }
+
+    closedir(dir);
+
+    return pid;
 }
