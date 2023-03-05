@@ -10,8 +10,10 @@
 #include <asio2/asio2.hpp>
 #include <asio2/tcp/tcp_server.hpp>
 #include <nlohmann/json.hpp>
+#ifdef ANDROID
 #include <frida-core.h>
 #include <sys/xattr.h>
+#endif
 
 struct aop_log
 {
@@ -99,6 +101,7 @@ bool CheckUnity(const std::string& zipFilePath)
     return find;
 }
 
+#ifdef ANDROID
 int find_pid_of(const char *process_name);
 int inject(const char* process_name, const char* so_path)
 {
@@ -157,6 +160,7 @@ setxattr_failed:
 
     return 0;
 }
+#endif
 
 int main(int argv, const char **args)
 {
@@ -204,6 +208,7 @@ int main(int argv, const char **args)
         }
     }, aop_check{});
 
+#ifdef ANDROID
     server.bind<http::verb::post>("/inject", [](http::web_request& req, http::web_response& rep) {
         try {
             nlohmann::json json = nlohmann::json::parse(req.body());
@@ -217,6 +222,7 @@ int main(int argv, const char **args)
             rep.fill_page(http::status::bad_request);
         }
     }, aop_check{});
+#endif
 
     server.bind_not_found([](http::web_request &req, http::web_response &rep)
                           {
