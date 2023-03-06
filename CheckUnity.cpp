@@ -119,13 +119,17 @@ int inject(const char* process_name, const char* so_path)
         pid = std::atoi(process_name);
         if (pid <= 0)
         {
-            goto bad_usage;
+            SPDLOG_ERROR("process {} not found", process_name);
+            return 2;
         }
     }
     SPDLOG_DEBUG("target={} so={} target_pid={}", process_name, so_path, pid);
 
     if (setxattr(so_path, XATTR_NAME_SELINUX, context, strlen(context) + 1, 0) != 0)
-        goto setxattr_failed;
+    {
+        SPDLOG_ERROR("Failed to set SELinux permissions");
+        return 3;
+    }
 
     injector = frida_injector_new();
 
@@ -144,21 +148,6 @@ int inject(const char* process_name, const char* so_path)
     g_object_unref(injector);
 
     return result;
-
-bad_usage:
-{
-    SPDLOG_ERROR("process {} not found", process_name);
-    frida_deinit();
-    return 2;
-}
-setxattr_failed:
-{
-    SPDLOG_ERROR("Failed to set SELinux permissions");
-    frida_deinit();
-    return 3;
-}
-
-    return 0;
 }
 #endif
 
@@ -213,8 +202,8 @@ int main(int argv, const char **args)
         try {
             nlohmann::json json = nlohmann::json::parse(req.body());
             auto process_name = json["name"].get<std::string>();
-            auto so_path = json["so"].get<std::string>();
-            auto result = inject(process_name.c_str(), so_path.c_str());
+            auto type = json["type"].get<int>();
+            auto result = inject(process_name.c_str(), "/data/local/tmp/libUnityCheat2.so");
             std::string content = fmt::format("{{\"name\" : \"{}\", \"result\" : {} }}", json["name"].get<std::string>(), result);
             rep.fill_json(content);
         }
