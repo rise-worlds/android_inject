@@ -31,7 +31,7 @@ bool myHook(unsigned long address, void *myFuntion, void **origFuntion, const ch
         }
         else
         {
-            if (DobbyHook(reinterpret_cast<void *>(address), myFuntion, origFuntion) == RS_SUCCESS)
+            if (DobbyHook(reinterpret_cast<void *>(address), myFuntion, origFuntion) == 0)
             {
                 LOGD("Hook %s Succeed at %lx !!", str, address);
                 if (editMemProt(address, prot))
@@ -75,7 +75,7 @@ bool unHook(unsigned long address, const char *str)
         }
         else
         {
-            if (DobbyDestroy(reinterpret_cast<void *>(address)) == RS_SUCCESS)
+            if (DobbyDestroy(reinterpret_cast<void *>(address)) == 0)
             {
                 LOGD("Destroy %s Succeed at %lx!!", str, address);
                 if (editMemProt(address, prot))
