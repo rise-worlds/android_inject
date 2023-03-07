@@ -113,22 +113,22 @@ include_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/include/)
 link_directories(frida/frida-android-${CMAKE_ANDROID_ARCH_ABI}/lib)
 add_subdirectory(frida-inject-custom)
 
-add_library(UnityCheat SHARED UnityCheat.cpp)
-target_link_libraries(UnityCheat dobby frida-gum utils_static)
+# add_library(UnityCheat SHARED UnityCheat.cpp)
+# target_link_libraries(UnityCheat dobby frida-gum utils_static)
 
-add_library(UnityCheat2 SHARED UnityCheat2.cpp)
-target_link_libraries(UnityCheat2 frida-gum utils_static)
+add_library(UnityCheat SHARED UnityCheat2.cpp)
+target_link_libraries(UnityCheat frida-gum utils_static)
 
-add_executable(CheckUnity CheckUnity.cpp 
+add_executable(inject_service inject_service.cpp 
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.c
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/ioapi.c
     )
-target_include_directories(CheckUnity PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
+target_include_directories(inject_service PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
 add_dependencies(${PROJECT_NAME} zlibstatic)
-target_link_libraries(CheckUnity zlibstatic frida-core)
+target_link_libraries(inject_service zlibstatic frida-core)
 
 if (CMAKE_BUILD_TYPE MATCHES "^Rel.*$")
 set_target_properties(UnityCheat PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
-set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
-set_target_properties(CheckUnity PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/CheckUnity.version")
+# set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
+set_target_properties(inject_service PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/inject_service.version")
 endif()

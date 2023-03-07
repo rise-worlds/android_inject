@@ -153,7 +153,7 @@ int inject(const char* process_name, const char* so_path)
 
 int main(int argv, const char **args)
 {
-    spdlog::set_level(spdlog::level::debug);
+    spdlog::set_level(spdlog::level::info);
     
     frida_init();
     frida_selinux_patch_policy();
@@ -201,9 +201,20 @@ int main(int argv, const char **args)
     server.bind<http::verb::post>("/inject", [](http::web_request& req, http::web_response& rep) {
         try {
             nlohmann::json json = nlohmann::json::parse(req.body());
+
+            bool result = false;
             auto process_name = json["name"].get<std::string>();
             auto type = json["type"].get<int>();
-            auto result = inject(process_name.c_str(), "/data/local/tmp/libUnityCheat2.so");
+            auto speed = json["speed"].get<int>();
+            const char* so_path = nullptr;
+            if (type == 1) {
+                so_path = "libUnityCheat.so";
+            } else {
+                std::string content = fmt::format("{{\"name\" : \"{}\", \"result\" : {} }}", json["name"].get<std::string>(), result);
+                rep.fill_json(content);
+                return;
+            }
+            result = inject(process_name.c_str(), so_path);
             std::string content = fmt::format("{{\"name\" : \"{}\", \"result\" : {} }}", json["name"].get<std::string>(), result);
             rep.fill_json(content);
         }
@@ -212,6 +223,10 @@ int main(int argv, const char **args)
         }
     }, aop_check{});
 #endif
+
+    server.bind<http::verb::post>("/ping", [](http::web_request& req, http::web_response& rep) {
+        rep.fill_json("{\"status\" : \"0\"}");
+    });
 
     server.bind_not_found([](http::web_request &req, http::web_response &rep)
                           {
