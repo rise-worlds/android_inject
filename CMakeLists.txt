@@ -80,7 +80,7 @@ include_directories(
 )
 
 set(DOBBY_GENERATE_SHARED OFF)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dobby)
+# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dobby)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/fmt)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/httplib)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/spdlog)
@@ -89,7 +89,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/zlib)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/dobby/include
+    # ${CMAKE_CURRENT_SOURCE_DIR}/dobby/include
     ${CMAKE_CURRENT_SOURCE_DIR}/Il2cppResolver
     ${CMAKE_CURRENT_SOURCE_DIR}/dlfcn
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
