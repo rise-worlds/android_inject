@@ -4,9 +4,16 @@
 #include <ioapi.h>
 #include <unzip.h>
 #include <cstring>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <csignal>
 #include <thread>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/android_sink.h>
+#include <spdlog/sinks/stdout_sinks.h>
+#include <spdlog/sinks/daily_file_sink.h>
 #include <asio2/asio2.hpp>
 #include <asio2/tcp/tcp_server.hpp>
 #include <nlohmann/json.hpp>
@@ -14,6 +21,15 @@
 #include <frida-core.h>
 #include <sys/xattr.h>
 #endif
+
+static int service_port = 10086;
+static std::string current_path;
+
+void sigFunc(int sig);
+int daemon();
+
+bool copyFile(const std::string& from, const std::string& to);
+bool exec(const std::string& cmd);
 
 struct aop_log
 {
@@ -79,7 +95,7 @@ bool CheckUnity(const std::string& zipFilePath)
         unzGetCurrentFileInfo64(zipfile, &file_info64, filename, sizeof(filename), NULL, 0, NULL, 0);
         unzCloseCurrentFile(zipfile);
 
-        SPDLOG_DEBUG("get file: {}", filename);
+        SPDLOG_TRACE("get file: {}", filename);
         for (auto &&path : libs_path)
         {
             if (std::strstr(filename, path) == filename)
@@ -101,9 +117,8 @@ bool CheckUnity(const std::string& zipFilePath)
     return find;
 }
 
-#ifdef ANDROID
 int find_pid_of(const char *process_name);
-int inject(const char* process_name, const char* so_path)
+int inject(const char* process_name, const char* so_path, int service_port)
 {
     int result = 0;
 
@@ -134,10 +149,10 @@ int inject(const char* process_name, const char* so_path)
     injector = frida_injector_new();
 
     error = NULL;
-    id = frida_injector_inject_library_file_sync(injector, pid, so_path, "example_agent_main", "example data", NULL, &error);
+    id = frida_injector_inject_library_file_sync(injector, pid, so_path, "example_agent_main", fmt::format("{}", service_port).c_str(), NULL, &error);
     if (error != NULL)
     {
-        SPDLOG_DEBUG("{}", error->message);
+        SPDLOG_ERROR("{}", error->message);
         g_clear_error(&error);
 
         result = 1;
@@ -149,12 +164,34 @@ int inject(const char* process_name, const char* so_path)
 
     return result;
 }
-#endif
 
-int main(int argv, const char **args)
+int main(int argc, const char **argv)
 {
-    spdlog::set_level(spdlog::level::info);
-    
+    signal(SIGINT, sigFunc);
+    signal(SIGTERM, sigFunc);
+    signal(SIGHUP, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
+
+    if (argc < 3)
+        return EINVAL;
+
+    current_path = argv[1];
+    auto stdout_sink = std::make_shared<spdlog::sinks::stdout_sink_mt>();
+    auto rotating_sink = std::make_shared<spdlog::sinks::daily_file_sink_mt>(current_path + "/log/service.log", 0, 0);
+    auto android_sink = std::make_shared<spdlog::sinks::android_sink_mt>("YY-INJECT");
+    auto logger = std::make_shared<spdlog::logger>("InjectService", spdlog::sinks_init_list{stdout_sink, rotating_sink, android_sink});
+    spdlog::set_default_logger(logger);
+    spdlog::set_level(spdlog::level::debug);
+
+    chdir(argv[1]);
+    service_port = std::atoi(argv[2]);
+#ifndef DEBUG
+    daemon();
+#endif
     frida_init();
     frida_selinux_patch_policy();
 
@@ -197,7 +234,6 @@ int main(int argv, const char **args)
         }
     }, aop_check{});
 
-#ifdef ANDROID
     server.bind<http::verb::post>("/inject", [](http::web_request& req, http::web_response& rep) {
         try {
             nlohmann::json json = nlohmann::json::parse(req.body());
@@ -214,7 +250,11 @@ int main(int argv, const char **args)
                 rep.fill_json(content);
                 return;
             }
-            result = inject(process_name.c_str(), so_path);
+            auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
+            auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}", current_path, so_path, so_full_path);
+            SPDLOG_DEBUG("call {}", cmd);
+            exec(cmd);
+            result = inject(process_name.c_str(), so_full_path.c_str(), service_port);
             std::string content = fmt::format("{{\"name\" : \"{}\", \"result\" : {} }}", json["name"].get<std::string>(), result);
             rep.fill_json(content);
         }
@@ -222,7 +262,6 @@ int main(int argv, const char **args)
             rep.fill_page(http::status::bad_request);
         }
     }, aop_check{});
-#endif
 
     server.bind<http::verb::post>("/ping", [](http::web_request& req, http::web_response& rep) {
         rep.fill_json("{\"status\" : \"0\"}");
@@ -233,7 +272,7 @@ int main(int argv, const char **args)
         asio2::ignore_unused(req);
         rep.fill_page(http::status::not_found); });
 
-    server.start("0.0.0.0", 10086);
+    server.start("0.0.0.0", service_port);
 
     while (std::getchar() != '\n')
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -287,4 +326,68 @@ int find_pid_of(const char *process_name)
     closedir(dir);
 
     return pid;
+}
+
+void sigFunc(int sig) {
+    if (sig == SIGINT || sig == SIGTERM) {
+        
+    }
+}
+
+int daemon()
+{
+    pid_t pid;
+    if ((pid = fork()) != 0)
+    {
+        /* parent process exit */
+        _exit(0);
+    }
+
+    setsid();
+
+    signal(SIGINT, sigFunc);
+    signal(SIGTERM, sigFunc);
+    signal(SIGHUP, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
+
+    struct sigaction sig;
+    sig.sa_handler = SIG_IGN;
+    sig.sa_flags   = 0;
+
+    sigemptyset(&sig.sa_mask);
+    sigaction(SIGPIPE, &sig, nullptr);
+
+    if ((pid = fork()) != 0)
+    {
+        /* parent process exit */
+        _exit(0);
+    }
+
+    umask(0);
+    setpgrp();
+
+    return 0;
+}
+
+bool copyFile(const std::string& from, const std::string& to)
+{
+    namespace fs = std::filesystem;
+    try {
+        return fs::copy_file(from, to);
+    } catch(fs::filesystem_error& e) {
+        SPDLOG_WARN(e.what());
+    }
+
+    return false;
+}
+
+bool exec(const std::string& cmd)
+{
+    FILE * pff = popen(cmd.c_str(), "r");
+    if (pff)
+      pclose(pff);
 }

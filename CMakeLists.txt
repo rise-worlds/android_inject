@@ -62,6 +62,10 @@ else()
         add_definitions(-DIOAPI_NO_64)
     endif()
 
+    set(SKIP_INSTALL_ALL ON)
+    SET(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/out/android/${CMAKE_BUILD_TYPE}/${CMAKE_ANDROID_ARCH_ABI}/)
+    message(STATUS "install: ${CMAKE_INSTALL_PREFIX}")
+
 endif()
 
 add_definitions(
@@ -120,10 +124,12 @@ add_executable(inject_service inject_service.cpp
     )
 target_include_directories(inject_service PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
 add_dependencies(${PROJECT_NAME} zlibstatic)
-target_link_libraries(inject_service zlibstatic frida-core)
+target_link_libraries(inject_service zlibstatic frida-core log)
 
 if (CMAKE_BUILD_TYPE MATCHES "^Rel.*$")
 set_target_properties(UnityCheat PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
 # set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
 set_target_properties(inject_service PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/inject_service.version")
 endif()
+
+# install(TARGETS inject_service UnityCheat)
