@@ -6,7 +6,22 @@
             "type": "shell",
             "windows": {
                 "command": "${workspaceFolder}/debug.ps1"
-            }
+            },
+            "dependsOn":["CMake: build"]
+        },
+        {
+            "type": "cmake",
+            "label": "CMake: build",
+            "command": "build",
+            "targets": [
+                "all"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "detail": "CMake build task"
         }
     ]
 }

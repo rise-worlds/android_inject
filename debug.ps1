@@ -1,3 +1,4 @@
+adb shell "su -c 'killall -9 inject_service'"
 adb shell "rm /data/local/tmp/inject_service; rm /data/local/tmp/libUnityCheat.so;"
 adb push build/inject_service build/libUnityCheat.so /data/local/tmp
 adb shell "chmod 777 /data/local/tmp/inject_service"

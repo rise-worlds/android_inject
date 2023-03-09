@@ -186,6 +186,7 @@
         "__split_buffer": "cpp",
         "__tuple": "cpp",
         "bitset": "cpp",
-        "cwctype": "cpp"
+        "cwctype": "cpp",
+        "__std_stream": "cpp"
     },
 }
