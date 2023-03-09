@@ -176,7 +176,7 @@ int main(int argc, const char **argv)
     signal(SIGTTIN, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
 
-    if (argc < 3)
+    if (argc < 4)
         return EINVAL;
 
     current_path = argv[1];
@@ -189,9 +189,9 @@ int main(int argc, const char **argv)
 
     chdir(argv[1]);
     service_port = std::atoi(argv[2]);
-#ifndef DEBUG
-    daemon();
-#endif
+    if (std::atoi(argv[3]) != 0)
+        daemon();
+    
     frida_init();
     frida_selinux_patch_policy();
 

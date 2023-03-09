@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceFolder}/build/inject_service",
-            "args": ["/data/local/tmp", "10086"],
+            "args": ["/data/local/tmp", "10086", "0"],
             "preLaunchTask": "build task",
             "initCommands": [
                 "platform select remote-android",
