@@ -69,11 +69,11 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 
     gum_init_embedded();
 
-    interceptor = gum_interceptor_obtain();
-    // listener = my_callback_listener_new();
-
-    /* Transactions are optional but improve performance with multiple hooks. */
-    gum_interceptor_begin_transaction(interceptor);
+    // interceptor = gum_interceptor_obtain();
+    // // listener = my_callback_listener_new();
+    //
+    // /* Transactions are optional but improve performance with multiple hooks. */
+    // gum_interceptor_begin_transaction(interceptor);
 
     // gpointer open_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "open"));
     // gum_interceptor_replace(interceptor, open_origin_address, reinterpret_cast<gpointer>(&open_hook), NULL, NULL);
@@ -102,51 +102,48 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
     // il2cpp_resolve_icall = reinterpret_cast<Il2CppMethodPointer (*)(const char *name)>(gum_module_find_export_by_name("libil2cpp.so", "il2cpp_resolve_icall"));
     SPDLOG_INFO("get il2cpp_resolve_icall address: {}", fmt::ptr(il2cpp_resolve_icall));
 
-    // // il2cpp_init
-    InitResolveFunc(Screen$$get_height, "UnityEngine.Screen::get_height");
-    SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_height));
-    InitResolveFunc(Screen$$get_width, "UnityEngine.Screen::get_width");
-    SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_width));
-    // 使用Unity游戏内的导出方法 获取屏幕宽高
-    if (Screen$$get_height && Screen$$get_width)
-    {
-        SPDLOG_INFO("Screen size is {}x{}", Screen$$get_width(), Screen$$get_height());
-    }
-
-    InitResolveFunc(Time$$set_timeScale, "UnityEngine.Time::set_timeScale");
-    InitResolveFunc(Time$$get_timeScale, "UnityEngine.Time::get_timeScale");
-    SPDLOG_DEBUG("get get_timeScale: {}", fmt::ptr(Time$$get_timeScale));
-    SPDLOG_DEBUG("get set_timeScale: {}", fmt::ptr(Time$$set_timeScale));
-    if (Time$$get_timeScale && Time$$set_timeScale)
-    {
-        SPDLOG_INFO("Time scale is {}", Time$$get_timeScale());
-        Time$$set_timeScale(10.0f);
-        SPDLOG_INFO("Time scale set {}", Time$$get_timeScale());
-    }
-
-    InitResolveFunc(Time$$get_deltaTime, "UnityEngine.Time::get_fixedDeltaTime");
-    SPDLOG_DEBUG("get get_deltaTime: {}", fmt::ptr(Time$$get_deltaTime));
-
-    InitResolveFunc(Time$$set_fixedDeltaTime, "UnityEngine.Time::set_fixedDeltaTime");
-    InitResolveFunc(Time$$get_fixedDeltaTime, "UnityEngine.Time::get_fixedDeltaTime");
-    SPDLOG_DEBUG("get get_fixedDeltaTime: {}", fmt::ptr(Time$$get_fixedDeltaTime));
-    SPDLOG_DEBUG("get set_fixedDeltaTime: {}", fmt::ptr(Time$$set_fixedDeltaTime));
-    if (Time$$get_fixedDeltaTime && Time$$set_fixedDeltaTime)
-    {
-        auto value = Time$$get_fixedDeltaTime();
-        SPDLOG_INFO("fixed delta time is {}", value);
-        Time$$set_fixedDeltaTime(value);
-        SPDLOG_INFO("fixed delta time set {}", Time$$get_fixedDeltaTime());
-    }
-
-    gum_interceptor_end_transaction(interceptor);
-
-    // g_object_unref (listener);
-    // g_object_unref (interceptor);
-    // gum_deinit_embedded();
-
     gp_run = std::make_shared<std::thread>([]()
                                            {
+                        do {
+                            // il2cpp_init
+                            InitResolveFunc(Screen$$get_height, "UnityEngine.Screen::get_height");
+                            SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_height));
+                            InitResolveFunc(Screen$$get_width, "UnityEngine.Screen::get_width");
+                            SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_width));
+                            // 使用Unity游戏内的导出方法 获取屏幕宽高
+                            if (Screen$$get_height && Screen$$get_width)
+                            {
+                                SPDLOG_INFO("Screen size is {}x{}", Screen$$get_width(), Screen$$get_height());
+                            }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        } while (!Screen$$get_height && !Screen$$get_width);
+
+                        InitResolveFunc(Time$$set_timeScale, "UnityEngine.Time::set_timeScale");
+                        InitResolveFunc(Time$$get_timeScale, "UnityEngine.Time::get_timeScale");
+                        SPDLOG_DEBUG("get get_timeScale: {}", fmt::ptr(Time$$get_timeScale));
+                        SPDLOG_DEBUG("get set_timeScale: {}", fmt::ptr(Time$$set_timeScale));
+                        if (Time$$get_timeScale && Time$$set_timeScale)
+                        {
+                            SPDLOG_INFO("Time scale is {}", Time$$get_timeScale());
+                            Time$$set_timeScale(10.0f);
+                            SPDLOG_INFO("Time scale set {}", Time$$get_timeScale());
+                        }
+
+                        InitResolveFunc(Time$$get_deltaTime, "UnityEngine.Time::get_fixedDeltaTime");
+                        SPDLOG_DEBUG("get get_deltaTime: {}", fmt::ptr(Time$$get_deltaTime));
+
+                        InitResolveFunc(Time$$set_fixedDeltaTime, "UnityEngine.Time::set_fixedDeltaTime");
+                        InitResolveFunc(Time$$get_fixedDeltaTime, "UnityEngine.Time::get_fixedDeltaTime");
+                        SPDLOG_DEBUG("get get_fixedDeltaTime: {}", fmt::ptr(Time$$get_fixedDeltaTime));
+                        SPDLOG_DEBUG("get set_fixedDeltaTime: {}", fmt::ptr(Time$$set_fixedDeltaTime));
+                        if (Time$$get_fixedDeltaTime && Time$$set_fixedDeltaTime)
+                        {
+                            auto value = Time$$get_fixedDeltaTime();
+                            SPDLOG_INFO("fixed delta time is {}", value);
+                            Time$$set_fixedDeltaTime(value);
+                            SPDLOG_INFO("fixed delta time set {}", Time$$get_fixedDeltaTime());
+                        }
+                        
                         int64_t last_check = getUnixTimestamp(), now;
                         httplib::Client client("localhost", server_port);
                         std::string path = fmt::format("/status?name={}", process_name);
@@ -178,6 +175,12 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                             std::this_thread::sleep_for(std::chrono::milliseconds(50));
                         } });
     gp_run->join();
+
+    // gum_interceptor_end_transaction(interceptor);
+    //
+    // // g_object_unref (listener);
+    // // g_object_unref (interceptor);
+    // // gum_deinit_embedded();
 }
 
 // static int open_hook(const char *path, int oflag, ...)

@@ -153,7 +153,11 @@ int inject(const char *process_name, const char *so_path, int service_port, int 
     }
     SPDLOG_INFO("target={} so={} target_pid={} speed={}", process_name, so_path, pid, speed);
 
-    if (setxattr(so_path, XATTR_NAME_SELINUX, context, strlen(context) + 1, 0) != 0)
+    auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
+    auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}; chmod 777 {2}", current_path, so_path, so_full_path);
+    SPDLOG_DEBUG("call {}", cmd);
+    exec(cmd);
+    if (setxattr(so_full_path.c_str(), XATTR_NAME_SELINUX, context, strlen(context) + 1, 0) != 0)
     {
         SPDLOG_ERROR("Failed to set SELinux permissions");
         return 3;
@@ -164,7 +168,7 @@ int inject(const char *process_name, const char *so_path, int service_port, int 
     error = NULL;
     json j_data = {{"port", service_port}, {"name", process_name}, {"pid", pid}, {"speed", speed}};
     std::string data = j_data.dump();
-    id = frida_injector_inject_library_file_sync(injector, pid, so_path, "example_agent_main", data.c_str(), NULL, &error);
+    id = frida_injector_inject_library_file_sync(injector, pid, so_full_path.c_str(), "example_agent_main", data.c_str(), NULL, &error);
     if (error != NULL)
     {
         SPDLOG_ERROR("{}", error->message);
@@ -235,8 +239,10 @@ int main(int argc, const char **argv)
             json body = json::parse(req.body());
             auto process_name = body["name"].get<std::string>();
             bool result = CheckUnity(body["path"]);
-            json content = {{"status", 0}, {"name", process_name}, {"result", result}};
-            rep.fill_json(std::string(content.dump()));
+            json json = {{"status", 0}, {"name", process_name}, {"result", result}};
+            std::string content = json.dump();
+            SPDLOG_DEBUG(content);
+            rep.fill_json(content);
         }
         catch(const json::exception&) {
             rep.fill_page(http::status::bad_request);
@@ -253,24 +259,21 @@ int main(int argc, const char **argv)
             auto type = body["type"].get<int>();
             auto speed = body["speed"].get<int>();
             const char* so_path = nullptr;
-            json content = {{"status", 0}, {"name", process_name}, {"result", result}};
+            json json = {{"status", 0}, {"name", process_name}, {"result", result}};
             if (type == 1) {
                 so_path = "libUnityCheat.so";
             } else {
-                content["result"] = -1;
-                rep.fill_json(std::string(content.dump()));
+                json["result"] = -1;
+                rep.fill_json(std::string(json.dump()));
                 return;
             }
 
-            // auto so_full_path = fmt::format("{}/{}", current_path, so_path);
-            auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
-            auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}; chmod 777 {2}", current_path, so_path, so_full_path);
-            SPDLOG_DEBUG("call {}", cmd);
-            exec(cmd);
-            result = inject(process_name.c_str(), so_full_path.c_str(), service_port, speed);
+            result = inject(process_name.c_str(), so_path, service_port, speed);
+            json["result"] = result;
             
-            rep.fill_json(std::string(content.dump()));
-        }
+            std::string content = json.dump();
+            rep.fill_json(content);
+        } 
         catch(const json::exception&) {
             rep.fill_page(http::status::bad_request);
         } });
@@ -279,7 +282,8 @@ int main(int argc, const char **argv)
                                   { 
         try {
             json json = {{"status", 0}};
-            rep.fill_json(json);
+            std::string content = json.dump();
+            rep.fill_json(content);
         }
         catch(const json::exception&) {
             rep.fill_page(http::status::bad_request);
@@ -306,6 +310,7 @@ int main(int argc, const char **argv)
                 json["speed"] = speed;
             }
             std::string content = json.dump();
+            SPDLOG_DEBUG(content);
             rep.fill_json(content);
         }
         catch(const json::exception&) {
