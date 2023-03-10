@@ -183,42 +183,66 @@ namespace asio2::detail
 			}
 
 			// mqtt auth
-			std::optional<std::string> username;
-
-			if (caller->get_preauthed_username())
+			if (caller->security().enabled())
 			{
-				if (caller->security().login_cert(caller->get_preauthed_username().value()))
+				std::optional<std::string> username;
+
+				if (caller->get_preauthed_username())
 				{
-					username = caller->get_preauthed_username();
+					if (caller->security().login_cert(caller->get_preauthed_username().value()))
+					{
+						username = caller->get_preauthed_username();
+					}
 				}
-			}
-			else if (msg.has_username() && msg.has_password())
-			{
-				username = caller->security().login(msg.username(), msg.password());
-			}
-			else
-			{
-				username = caller->security().login_anonymous();
-			}
+				else if (msg.has_username() && msg.has_password())
+				{
+					username = caller->security().login(msg.username(), msg.password());
+				}
+				else
+				{
+					username = caller->security().login_anonymous();
+				}
 
-			// If login fails, try the unauthenticated user
-			if (!username)
-				username = caller->security().login_unauthenticated();
+				// If login fails, try the unauthenticated user
+				if (!username)
+				{
+					username = caller->security().login_unauthenticated();
+				}
 
-			if (caller->security().enabled() && !username)
-			{
-				ASIO2_LOG(spdlog::level::trace, "User failed to login: {}",
-					(msg.has_username() ? msg.username() : "anonymous user"));
+				if (!username)
+				{
+					ASIO2_LOG(spdlog::level::trace, "User failed to login: {}",
+						(msg.has_username() ? msg.username() : "anonymous user"));
 
-				if (msg.has_username() && msg.has_password())
-					return _set_connack_reason_code_with_bad_user_name_or_password(ec, rep);
+					if (msg.has_username() && msg.has_password())
+						return _set_connack_reason_code_with_bad_user_name_or_password(ec, rep);
 
-				return _set_connack_reason_code_with_not_authorized(ec, rep);
+					return _set_connack_reason_code_with_not_authorized(ec, rep);
+				}
 			}
 
 			// check client id
 			if (_check_connect_client_id(ec, caller, msg, rep); ec)
 				return;
+
+			// set keepalive timeout
+			// If the Keep Alive value is non-zero and the Server does not receive a Control Packet from
+			// the Client within one and a half times the Keep Alive time period, it MUST disconnect the
+			// Network Connection to the Client as if the network had failed [MQTT-3.1.2-24].
+			// A Keep Alive value of zero (0) has the effect of turning off the keep alive mechanism.
+			// This means that, in this case, the Server is not required to disconnect the Client on the
+			// grounds of inactivity. Note that a Server is permitted to disconnect a Client that it
+			// determines to be inactive or non-responsive at any time, regardless of the Keep Alive value
+			// provided by that Client.
+			mqtt::two_byte_integer::value_type keepalive = msg.keep_alive();
+			if (keepalive == 0)
+			{
+				caller->set_silence_timeout(std::chrono::milliseconds(detail::tcp_silence_timeout));
+			}
+			else
+			{
+				caller->set_silence_timeout(std::chrono::milliseconds(keepalive * 1500));
+			}
 
 			// fill the reason code with 0.
 			rep.reason_code(0);
@@ -247,9 +271,7 @@ namespace asio2::detail
 			// Session[MQTT-3.1.2-5].If a CONNECT packet is received with Clean Start set to 0 and there is no Session
 			// associated with the Client Identifier, the Server MUST create a new Session[MQTT-3.1.2-6].
 
-			asio2_unique_lock lock{ caller->get_mutex() };
-
-			auto iter = caller->mqtt_sessions().find(caller->client_id());
+			std::shared_ptr<caller_t> session_ptr = caller->mqtt_sessions().find_mqtt_session(caller->client_id());
 
 			// If the Server accepts a connection with Clean Start set to 1, the Server MUST set Session
 			// Present to 0 in the CONNACK packet in addition to setting a 0x00 (Success) Reason Code in
@@ -261,16 +283,16 @@ namespace asio2::detail
 			// it MUST set Session Present to 0 in the CONNACK packet. In both cases it MUST set a 0x00
 			// (Success) Reason Code in the CONNACK packet [MQTT-3.2.2-3].
 			else
-				rep.session_present(iter != caller->mqtt_sessions().end());
+				rep.session_present(session_ptr != nullptr);
 
-			if (iter == caller->mqtt_sessions().end())
+			if (session_ptr == nullptr)
 			{
-				iter = caller->mqtt_sessions().emplace(caller->client_id(), caller_ptr).first;
+				caller->mqtt_sessions().push_mqtt_session(caller->client_id(), caller_ptr);
+
+				session_ptr = caller_ptr;
 			}
 			else
 			{
-				auto& session_ptr = iter->second;
-
 				if (session_ptr->is_started())
 				{
 					// send will message
@@ -316,7 +338,15 @@ namespace asio2::detail
 					}
 
 					// disconnect session
-					// must use post, beasue the session1 stop is called in the session2 thread.
+					// In previous versions, the mutex is a global variable, when code reached here,
+					// the mutex status is locked already, so if we call session_ptr->stop()
+					// directly, the stop maybe blocked forever, beacuse the session1 stop maybe
+					// called in the session2 thread, and in the _handle_disconnect funcion of mqtt
+					// session, the global mutex is required to lock again, so it caused deaklock,
+					// to solve this problem, we can use session->post([](){session->stop()}).
+					// but now, we change the mutex from global variable to member variable for each
+					// mqtt class, so now, it won't caused deaklock, even we only use session->stop,
+					// but we still use session->post([](){session->stop()}), to enhanced stability.
 					session_ptr->post([session_ptr]() mutable { session_ptr->stop(); });
 
 					// 
@@ -419,10 +449,8 @@ namespace asio2::detail
 
 			//	caller->connect_message_ = msg;
 
-			//	asio2_unique_lock lock{ caller->get_mutex() };
-
-			//	auto iter = caller->mqtt_sessions().find(msg.client_id());
-			//	if (iter != caller->mqtt_sessions().end())
+			//	std::shared_ptr<caller_t> session_ptr = caller->mqtt_sessions().find_mqtt_session(msg.client_id());
+			//	if (session_ptr != nullptr)
 			//	{
 
 			//	}

@@ -27,6 +27,7 @@
 
 #include <asio2/base/detail/allocator.hpp>
 #include <asio2/base/detail/util.hpp>
+#include <asio2/base/detail/shared_mutex.hpp>
 
 namespace asio2::detail
 {
@@ -112,7 +113,7 @@ namespace asio2::detail
 					// this thread is same as the server's io thread, when code run to here,
 					// the server's _post_stop must not be executed, so the server's sessions_.for_each
 					// -> session_ptr->stop() must not be executed.
-					asio2_unique_lock guard(this->mutex_);
+					asio2::unique_locker guard(this->mutex_);
 					inserted = this->sessions_.try_emplace(session_ptr->hash_key(), session_ptr).second;
 
 				#if defined(_DEBUG) || defined(DEBUG)
@@ -141,7 +142,7 @@ namespace asio2::detail
 				bool erased = false;
 
 				{
-					asio2_unique_lock guard(this->mutex_);
+					asio2::unique_locker guard(this->mutex_);
 					erased = (this->sessions_.erase(session_ptr->hash_key()) > 0);
 				}
 
@@ -177,13 +178,40 @@ namespace asio2::detail
 		template<class Fun>
 		inline void for_each(Fun&& fn)
 		{
-			asio2_shared_lock guard(this->mutex_);
-			for (auto &[k, session_ptr] : this->sessions_)
-			{
-				std::ignore = k;
+			// thred safety for each
+			// 
+			std::vector<std::shared_ptr<session_t>> sessions;
 
+			{
+				asio2::shared_locker guard(this->mutex_);
+
+				sessions.reserve(this->sessions_.size());
+
+				for (const auto& [k, session_ptr] : this->sessions_)
+				{
+					std::ignore = k;
+
+					sessions.emplace_back(session_ptr);
+				}
+			}
+
+			for (std::shared_ptr<session_t>& session_ptr : sessions)
+			{
 				fn(session_ptr);
 			}
+
+
+			// if the unique locker was called in the callback inner, then will cause deadlock.
+			// and if the callback is a time-consuming operation, the new session will can't enter.
+			// 
+			//asio2::shared_locker guard(this->mutex_);
+
+			//for (auto& [k, session_ptr] : this->sessions_)
+			//{
+			//	std::ignore = k;
+
+			//	fn(session_ptr);
+			//}
 		}
 
 		/**
@@ -191,7 +219,7 @@ namespace asio2::detail
 		 */
 		inline std::shared_ptr<session_t> find(const key_type & key)
 		{
-			asio2_shared_lock guard(this->mutex_);
+			asio2::shared_locker guard(this->mutex_);
 			auto iter = this->sessions_.find(key);
 			return (iter == this->sessions_.end() ? std::shared_ptr<session_t>() : iter->second);
 		}
@@ -203,7 +231,8 @@ namespace asio2::detail
 		template<class Fun>
 		inline std::shared_ptr<session_t> find_if(Fun&& fn)
 		{
-			asio2_shared_lock guard(this->mutex_);
+			// if the unique locker was called in the callback inner, then will cause deadlock.
+			asio2::shared_locker guard(this->mutex_);
 			auto iter = std::find_if(this->sessions_.begin(), this->sessions_.end(),
 			[&fn](auto &pair) mutable
 			{
@@ -217,6 +246,92 @@ namespace asio2::detail
 		 */
 		inline std::size_t size() const noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
+			// is std map.size() thread safety?
+			// 
+			// https://stackoverflow.com/questions/2170541/what-operations-are-thread-safe-on-stdmap
+			// https://en.cppreference.com/w/cpp/container
+			// https://timsong-cpp.github.io/cppwp/n3337/container.requirements.dataraces
+			// https://stackoverflow.com/questions/15067160/stdmap-thread-safety
+			// https://stackoverflow.com/questions/14127379/does-const-mean-thread-safe-in-c11
+
+			// There is no one consensus:
+
+			// The C++11 standard guarantees that const method access to containers is safe from
+			// different threads (ie, both use const methods).
+
+			// It should be thread-safe to call a const function from multiple threads simultaneously,
+			// without calling a non-const function at the same time in another thread.
+
+			// after my test on windows and linux:
+			// multithread call const function without mutex, and multithread call no-const function 
+			// with mutex at the same time, the result of the const function seems to be no problem.
+
+			//#include <unordered_map>
+			//#include <shared_mutex>
+			//#include <thread>
+			//
+			//int main()
+			//{
+			//    std::shared_mutex mtx;
+			//    std::unordered_map<int, int> map;
+			//
+			//    std::srand((unsigned int)std::time(nullptr));
+			//
+			//    for (std::size_t i = 0; i < std::thread::hardware_concurrency() * 2; i++)
+			//    {
+			//        std::thread([&]() mutable
+			//        {
+			//            for (;;)
+			//            {
+			//                int n = std::rand();
+			//                std::unique_lock g(mtx);
+			//                if (map.size() < 1000)
+			//                    map.emplace(n, n);
+			//                else
+			//                    std::this_thread::sleep_for(std::chrono::milliseconds(0));
+			//            }
+			//        }).detach();
+			//    }
+			//
+			//    for (std::size_t i = 0; i < std::thread::hardware_concurrency() * 2; i++)
+			//    {
+			//        std::thread([&]() mutable
+			//        {
+			//            for (;;)
+			//            {
+			//                std::unique_lock g(mtx);
+			//                if (map.size() > 500)
+			//                    map.erase(map.begin());
+			//                else
+			//                    std::this_thread::sleep_for(std::chrono::milliseconds(0));
+			//            }
+			//        }).detach();
+			//    }
+			//
+			//    std::this_thread::sleep_for(std::chrono::seconds(5));
+			//
+			//    for (std::size_t i = 0; i < std::thread::hardware_concurrency() * 2; i++)
+			//    {
+			//        std::thread([&]() mutable
+			//        {
+			//            for (;;)
+			//            {
+			//                int n = int(map.size());
+			//                if (n < 500 || n > 1000 || map.empty())
+			//                {
+			//                    printf("error %d\n", n);
+			//                }
+			//            }
+			//        }).detach();
+			//    }
+			//
+			//    while (std::getchar() != '\n');
+			//
+			//    return 0;
+			//}
+
 			return this->sessions_.size();
 		}
 
@@ -225,6 +340,8 @@ namespace asio2::detail
 		 */
 		inline bool empty() const noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			return this->sessions_.empty();
 		}
 
@@ -237,23 +354,23 @@ namespace asio2::detail
 		}
 
 	protected:
-		/// session unorder map,these session is already connected session 
-		std::unordered_map<key_type, std::shared_ptr<session_t>> sessions_;
-
 		/// use rwlock to make this session map thread safe
-		mutable asio2_shared_mutex                mutex_;
+		mutable asio2::shared_mutexer                            mutex_;
+
+		/// session unorder map,these session is already connected session 
+		std::unordered_map<key_type, std::shared_ptr<session_t>> sessions_ ASIO2_GUARDED_BY(mutex_);
 
 		/// the zero io_context refrence in the iopool
-		io_t                                    & io_;
+		io_t                                                   & io_;
 
 		/// The memory to use for handler-based custom memory allocation.
 		handler_memory<std::false_type, assizer<args_type>>      allocator_;
 
 		/// server state refrence
-		std::atomic<state_t>                    & state_;
+		std::atomic<state_t>                                   & state_;
 
 	#if defined(_DEBUG) || defined(DEBUG)
-		bool                                      is_all_session_stop_called_ = false;
+		bool                                                     is_all_session_stop_called_ = false;
 	#endif
 	};
 }

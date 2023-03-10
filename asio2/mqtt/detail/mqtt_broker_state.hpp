@@ -15,6 +15,8 @@
 #pragma once
 #endif // defined(_MSC_VER) && (_MSC_VER >= 1200)
 
+#include <asio2/base/detail/shared_mutex.hpp>
+
 #include <asio2/mqtt/options.hpp>
 
 #include <asio2/mqtt/detail/mqtt_invoker.hpp>
@@ -22,6 +24,7 @@
 #include <asio2/mqtt/detail/mqtt_shared_target.hpp>
 #include <asio2/mqtt/detail/mqtt_retained_message.hpp>
 #include <asio2/mqtt/detail/mqtt_security.hpp>
+#include <asio2/mqtt/detail/mqtt_session_persistence.hpp>
 
 namespace asio2::mqtt
 {
@@ -41,15 +44,12 @@ namespace asio2::mqtt
 			security_.default_config();
 		}
 
-		/// use rwlock to make this id session map thread safe
-		mutable asio2_shared_mutex                                         mutex_;
-
 		asio2::detail::mqtt_options                                      & options_;
 
 		asio2::detail::mqtt_invoker_t<session_t, args_t>                 & invoker_;
 
 		/// client id map
-		std::unordered_map<std::string_view, std::shared_ptr<session_t>>   mqtt_sessions_;
+		asio2::detail::mqtt_session_persistence<session_t, args_t>         mqtt_sessions_;
 
 		/// subscription information map
 		mqtt::subscription_map<std::string_view, subnode_type>             subs_map_;

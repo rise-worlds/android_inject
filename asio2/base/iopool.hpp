@@ -30,6 +30,7 @@
 #include <asio2/base/error.hpp>
 #include <asio2/base/define.hpp>
 #include <asio2/base/detail/util.hpp>
+#include <asio2/base/detail/shared_mutex.hpp>
 
 namespace asio2::detail
 {
@@ -189,7 +190,7 @@ namespace asio2::detail
 		/**
 		 * @brief return the thread id of the current io_context running in.
 		 */
-		inline std::thread::id get_thread_id() const noexcept
+		inline std::thread::id get_thread_id() noexcept
 		{
 			return this->thread_id_;
 		}
@@ -197,7 +198,7 @@ namespace asio2::detail
 		/**
 		 * @brief Determine whether the current io_context is running in the current thread.
 		 */
-		inline bool running_in_this_thread() const noexcept
+		inline bool running_in_this_thread() noexcept
 		{
 			return (std::this_thread::get_id() == this->thread_id_);
 		}
@@ -285,7 +286,7 @@ namespace asio2::detail
 		 * @brief constructor
 		 * @param concurrency - the pool size, default is double the number of CPU cores
 		 */
-		explicit iopool(std::size_t concurrency = default_concurrency())
+		explicit iopool(std::size_t concurrency = default_concurrency()) : stopped_(true), next_(0)
 		{
 			if (concurrency == 0)
 			{
@@ -321,7 +322,7 @@ namespace asio2::detail
 		{
 			clear_last_error();
 
-			std::lock_guard<std::mutex> guard(this->mutex_);
+			asio2::unique_locker guard(this->mutex_);
 
 			if (!this->stopped_)
 			{
@@ -419,8 +420,9 @@ namespace asio2::detail
 		 */
 		void stop()
 		{
+			// split read and write to avoid deadlock caused by iopool.post([&iopool]() {iopool.stop(); });
 			{
-				std::lock_guard<std::mutex> guard(this->mutex_);
+				asio2::shared_locker guard(this->mutex_);
 
 				if (this->stopped_)
 					return;
@@ -428,8 +430,15 @@ namespace asio2::detail
 				if (this->guards_.empty() && this->threads_.empty())
 					return;
 
-				if (this->running_in_threads())
-					return this->cancel();
+				if (this->running_in_threads_impl())
+					return this->cancel_impl();
+			}
+
+			{
+				asio2::unique_locker guard(this->mutex_);
+
+				if (this->stopped_)
+					return;
 
 				this->stopped_ = true;
 			}
@@ -441,7 +450,7 @@ namespace asio2::detail
 			this->wait_for_io_context_stopped();
 
 			{
-				std::lock_guard<std::mutex> guard(this->mutex_);
+				asio2::unique_locker guard(this->mutex_);
 
 				// call executor_work_guard reset,and then the io_context working thread will be exited.
 				// In fact, the guards has called reset already, but there is no problem with repeated calls
@@ -472,8 +481,10 @@ namespace asio2::detail
 		/**
 		 * @brief check whether the io_context pool is stopped
 		 */
-		inline bool stopped() const noexcept
+		inline bool stopped() noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			return (this->stopped_);
 		}
 
@@ -482,9 +493,11 @@ namespace asio2::detail
 		 */
 		inline io_t& get(std::size_t index = static_cast<std::size_t>(-1)) noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			ASIO2_ASSERT(!this->iots_.empty());
 
-			return *(this->iots_[this->next(index)]);
+			return *(this->iots_[this->next_impl(index)]);
 		}
 
 		/**
@@ -492,30 +505,30 @@ namespace asio2::detail
 		 */
 		inline asio::io_context& get_context(std::size_t index = static_cast<std::size_t>(-1)) noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			ASIO2_ASSERT(!this->iots_.empty());
 
-			return this->iots_[this->next(index)]->context();
+			return this->iots_[this->next_impl(index)]->context();
 		}
 
 		/**
 		 * @brief Determine whether current code is running in the io_context pool threads.
 		 */
-		inline bool running_in_threads() const noexcept
+		inline bool running_in_threads() noexcept
 		{
-			std::thread::id curr_tid = std::this_thread::get_id();
-			for (auto & thread : this->threads_)
-			{
-				if (curr_tid == thread.get_id())
-					return true;
-			}
-			return false;
+			asio2::shared_locker guard(this->mutex_);
+
+			return this->running_in_threads_impl();
 		}
 
 		/**
 		 * @brief Determine whether current code is running in the io_context thread by index
 		 */
-		inline bool running_in_thread(std::size_t index) const noexcept
+		inline bool running_in_thread(std::size_t index) noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			ASIO2_ASSERT(index < this->threads_.size());
 
 			if (!(index < this->threads_.size()))
@@ -527,16 +540,20 @@ namespace asio2::detail
 		/**
 		 * @brief get io_context pool size.
 		 */
-		inline std::size_t size() const noexcept
+		inline std::size_t size() noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			return this->iots_.size();
 		}
 
 		/**
 		 * @brief Get the thread id of the specified thread index.
 		 */
-		inline std::thread::id get_thread_id(std::size_t index) const noexcept
+		inline std::thread::id get_thread_id(std::size_t index) noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			return this->threads_[index % this->threads_.size()].get_id();
 		}
 
@@ -545,11 +562,12 @@ namespace asio2::detail
 		 */
 		inline void wait_for_io_context_stopped()
 		{
+			// split read and write to avoid deadlock caused by iopool.post([&iopool]() {iopool.stop(); });
 			{
-				std::lock_guard<std::mutex> guard(this->mutex_);
+				asio2::shared_locker guard(this->mutex_);
 
-				if (this->running_in_threads())
-					return this->cancel();
+				if (this->running_in_threads_impl())
+					return this->cancel_impl();
 
 				// wiat fo all pending events completed.
 				for (auto& iot : this->iots_)
@@ -557,6 +575,10 @@ namespace asio2::detail
 					while (iot->pending() > std::size_t(0))
 						std::this_thread::sleep_for(std::chrono::milliseconds(0));
 				}
+			}
+
+			{
+				asio2::unique_locker guard(this->mutex_);
 
 				// first reset the acceptor io_context work guard
 				if (!this->guards_.empty())
@@ -566,29 +588,54 @@ namespace asio2::detail
 			constexpr auto max = std::chrono::milliseconds(10);
 			constexpr auto min = std::chrono::milliseconds(1);
 
-			// second wait indefinitely until the acceptor io_context is stopped
-			for (std::size_t i = 0; i < std::size_t(1) && i < this->iocs_.size(); ++i)
 			{
-				auto t1 = std::chrono::steady_clock::now();
-				auto& ioc = this->iocs_[i];
-				auto& iot = this->iots_[i];
-				while (!ioc->stopped())
-				{
-					// the timer may not be canceled successed when using visual
-					// studio break point for debugging, so cancel it at each loop
-					iot->cancel();
+				asio2::shared_locker guard(this->mutex_);
 
-					auto t2 = std::chrono::steady_clock::now();
-					auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-					std::this_thread::sleep_for(std::clamp(ms, min, max));
+				// second wait indefinitely until the acceptor io_context is stopped
+				for (std::size_t i = 0; i < std::size_t(1) && i < this->iocs_.size(); ++i)
+				{
+					auto t1 = std::chrono::steady_clock::now();
+					auto& ioc = this->iocs_[i];
+					auto& iot = this->iots_[i];
+					while (!ioc->stopped())
+					{
+						// the timer may not be canceled successed when using visual
+						// studio break point for debugging, so cancel it at each loop
+
+						// must cancel all iots, otherwise maybe cause deaklock like below:
+						// the client_ptr->bind_recv has hold the session_ptr, and the session_ptr
+						// is in the indexed 1 iot ( not indexed 0 iot ), so if call iot->cancel,
+						// the cancel function of indexed 1 iot wont be called, so the stop function
+						// of client_ptr won't be called too, so the session_ptr which holded by the
+						// client_ptr will can't be destroyed, so the server's acceptor io will 
+						// can't be stopped(this means the indexed 0 io can't be stopped).
+
+						//server.bind_accept([](std::shared_ptr<asio2::tcp_session>& session_ptr)
+						//{
+						//	std::shared_ptr<asio2::tcp_client> client_ptr = std::make_shared<asio2::tcp_client>(
+						//		512, 1024, session_ptr->io());
+						//
+						//	client_ptr->bind_recv([session_ptr](std::string_view data) mutable
+						//	{
+						//	});
+						//
+						//	client_ptr->async_start("127.0.0.1", 8888);
+						//});
+
+						this->cancel_impl();
+
+						auto t2 = std::chrono::steady_clock::now();
+						auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+						std::this_thread::sleep_for(std::clamp(ms, min, max));
+					}
+					iot->thread_id_ = std::thread::id{};
+					ASIO2_ASSERT(iot->timers().empty());
+					ASIO2_ASSERT(iot->objects_.empty());
 				}
-				iot->thread_id_ = std::thread::id{};
-				ASIO2_ASSERT(iot->timers().empty());
-				ASIO2_ASSERT(iot->objects_.empty());
 			}
 
 			{
-				std::lock_guard<std::mutex> guard(this->mutex_);
+				asio2::unique_locker guard(this->mutex_);
 
 				for (std::size_t i = 1; i < this->guards_.size(); ++i)
 				{
@@ -596,24 +643,28 @@ namespace asio2::detail
 				}
 			}
 
-			for (std::size_t i = 1; i < this->iocs_.size(); ++i)
 			{
-				auto t1 = std::chrono::steady_clock::now();
-				auto& ioc = this->iocs_[i];
-				auto& iot = this->iots_[i];
-				while (!ioc->stopped())
-				{
-					// the timer may not be canceled successed when using visual
-					// studio break point for debugging, so cancel it at each loop
-					iot->cancel();
+				asio2::shared_locker guard(this->mutex_);
 
-					auto t2 = std::chrono::steady_clock::now();
-					auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-					std::this_thread::sleep_for(std::clamp(ms, min, max));
+				for (std::size_t i = 1; i < this->iocs_.size(); ++i)
+				{
+					auto t1 = std::chrono::steady_clock::now();
+					auto& ioc = this->iocs_[i];
+					auto& iot = this->iots_[i];
+					while (!ioc->stopped())
+					{
+						// the timer may not be canceled successed when using visual
+						// studio break point for debugging, so cancel it at each loop
+						this->cancel_impl();
+
+						auto t2 = std::chrono::steady_clock::now();
+						auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+						std::this_thread::sleep_for(std::clamp(ms, min, max));
+					}
+					iot->thread_id_ = std::thread::id{};
+					ASIO2_ASSERT(iot->timers().empty());
+					ASIO2_ASSERT(iot->objects_.empty());
 				}
-				iot->thread_id_ = std::thread::id{};
-				ASIO2_ASSERT(iot->timers().empty());
-				ASIO2_ASSERT(iot->objects_.empty());
 			}
 		}
 
@@ -622,15 +673,9 @@ namespace asio2::detail
 		 */
 		inline void cancel()
 		{
-			for (std::size_t i = 0; i < this->iocs_.size(); ++i)
-			{
-				auto& ioc = this->iocs_[i];
-				auto& iot = this->iots_[i];
-				if (!ioc->stopped())
-				{
-					iot->cancel();
-				}
-			}
+			asio2::shared_locker guard(this->mutex_);
+
+			return this->cancel_impl();
 		}
 
 		/**
@@ -638,14 +683,13 @@ namespace asio2::detail
 		 */
 		inline std::size_t next(std::size_t index) noexcept
 		{
-			// Use a round-robin scheme to choose the next io_context to use. 
-			return (index == static_cast<std::size_t>(-1) ?
-				((++(this->next_)) % this->iots_.size()) : (index % this->iots_.size()));
+			asio2::shared_locker guard(this->mutex_);
+
+			return this->next_impl(index);
 		}
 
 		/**
-		 * The wait_for() function blocks until all work has finished and 
-		 * until the specified duration has elapsed.
+		 * The wait_for() function blocks until the specified duration has elapsed.
 		 *
 		 * @param rel_time - The duration for which the call may block.
 		 */
@@ -660,14 +704,20 @@ namespace asio2::detail
 
 			clear_last_error();
 
-			asio::steady_timer timer(this->iots_[0]->context());
+			io_t* iot = nullptr;
+
+			{
+				asio2::shared_locker guard(this->mutex_);
+				iot = this->iots_[0].get();
+			}
+
+			asio::steady_timer timer(iot->context());
 			timer.expires_after(rel_time);
 			timer.wait(get_last_error());
 		}
 
 		/**
-		 * The wait_until() function blocks until all work has finished and 
-		 * until the specified time has been reached.
+		 * The wait_until() function blocks until the specified time has been reached.
 		 *
 		 * @param abs_time - The time point until which the call may block.
 		 */
@@ -682,7 +732,14 @@ namespace asio2::detail
 
 			clear_last_error();
 
-			asio::steady_timer timer(this->iots_[0]->context());
+			io_t* iot = nullptr;
+
+			{
+				asio2::shared_locker guard(this->mutex_);
+				iot = this->iots_[0].get();
+			}
+
+			asio::steady_timer timer(iot->context());
 			timer.expires_at(abs_time);
 			timer.wait(get_last_error());
 		}
@@ -703,8 +760,15 @@ namespace asio2::detail
 
 			clear_last_error();
 
+			io_t* iot = nullptr;
+
+			{
+				asio2::shared_locker guard(this->mutex_);
+				iot = this->iots_[0].get();
+			}
+
 			// note: The variable name signals will conflict with the macro signals of qt
-			asio::signal_set signalset(this->iots_[0]->context());
+			asio::signal_set signalset(iot->context());
 
 			(signalset.add(signal_number), ...);
 
@@ -729,6 +793,8 @@ namespace asio2::detail
 		template<class Fun, class... Args>
 		auto post(Fun&& fun, Args&&... args) -> std::future<std::invoke_result_t<Fun, Args...>>
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			using return_type = std::invoke_result_t<Fun, Args...>;
 
 			std::size_t index = 0, num = (std::numeric_limits<std::size_t>::max)();
@@ -790,6 +856,8 @@ namespace asio2::detail
 			std::enable_if_t<std::is_integral_v<std::remove_cv_t<std::remove_reference_t<IntegerT>>>, int> = 0>
 		auto post(IntegerT thread_index, Fun&& fun, Args&&... args) -> std::future<std::invoke_result_t<Fun, Args...>>
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			using return_type = std::invoke_result_t<Fun, Args...>;
 
 			std::promise<return_type> promise;
@@ -815,27 +883,61 @@ namespace asio2::detail
 		}
 
 	protected:
-		/// threads to run all of the io_context
-		std::vector<std::thread>                                     threads_;
+		inline bool running_in_threads_impl() noexcept ASIO2_NO_THREAD_SAFETY_ANALYSIS
+		{
+			std::thread::id curr_tid = std::this_thread::get_id();
 
-		/// The pool of io_context. 
-		std::vector<std::unique_ptr<asio::io_context>>               iocs_;
+			for (auto& thread : this->threads_)
+			{
+				if (curr_tid == thread.get_id())
+					return true;
+			}
 
-		/// The pool of io_context. 
-		std::vector<std::unique_ptr<io_t>>                           iots_;
+			return false;
+		}
 
+		inline void cancel_impl() ASIO2_NO_THREAD_SAFETY_ANALYSIS
+		{
+			for (std::size_t i = 0; i < this->iocs_.size(); ++i)
+			{
+				auto& ioc = this->iocs_[i];
+				auto& iot = this->iots_[i];
+				if (!ioc->stopped())
+				{
+					iot->cancel();
+				}
+			}
+		}
+
+		inline std::size_t next_impl(std::size_t index) noexcept ASIO2_NO_THREAD_SAFETY_ANALYSIS
+		{
+			// Use a round-robin scheme to choose the next io_context to use. 
+			return (index == static_cast<std::size_t>(-1) ?
+				((++(this->next_)) % this->iots_.size()) : (index % this->iots_.size()));
+		}
+
+	protected:
 		/// 
-		std::mutex                                                   mutex_;
+		mutable asio2::shared_mutexer                                mutex_;
+
+		/// threads to run all of the io_context
+		std::vector<std::thread>                                     threads_ ASIO2_GUARDED_BY(mutex_);
+
+		/// The pool of io_context. 
+		std::vector<std::unique_ptr<asio::io_context>>               iocs_    ASIO2_GUARDED_BY(mutex_);
+
+		/// The pool of io_context. 
+		std::vector<std::unique_ptr<io_t>>                           iots_    ASIO2_GUARDED_BY(mutex_);
 
 		/// Flag whether the io_context pool has stopped already
-		bool                                                         stopped_  = true;
+		bool                                                         stopped_ ASIO2_GUARDED_BY(mutex_);
 
 		/// The next io_context to use for a connection. 
-		std::size_t                                                  next_     = 0;
+		std::size_t                                                  next_;
 
 		// Give all the io_contexts executor_work_guard to do so that their run() functions will not 
 		// exit until they are explicitly stopped. 
-		std::vector<asio::executor_work_guard<asio::io_context::executor_type>> guards_;
+		std::vector<asio::executor_work_guard<asio::io_context::executor_type>> guards_ ASIO2_GUARDED_BY(mutex_);
 	};
 
 	class iopool_base
@@ -846,10 +948,10 @@ namespace asio2::detail
 
 		virtual bool                        start  ()                           = 0;
 		virtual void                        stop   ()                           = 0;
-		virtual bool                        stopped()            const noexcept = 0;
+		virtual bool                        stopped()                  noexcept = 0;
 		virtual io_t                      & get    (std::size_t index) noexcept = 0;
-		virtual std::size_t                 size   ()            const noexcept = 0;
-		virtual bool             running_in_threads()            const noexcept = 0;
+		virtual std::size_t                 size   ()                  noexcept = 0;
+		virtual bool             running_in_threads()                  noexcept = 0;
 	};
 
 	class default_iopool : public iopool_base
@@ -886,7 +988,7 @@ namespace asio2::detail
 		/**
 		 * @brief check whether the io_context pool is stopped
 		 */
-		virtual bool stopped() const noexcept override
+		virtual bool stopped() noexcept override
 		{
 			return this->impl_.stopped();
 		}
@@ -902,7 +1004,7 @@ namespace asio2::detail
 		/**
 		 * @brief get io_context pool size.
 		 */
-		virtual std::size_t size() const noexcept override
+		virtual std::size_t size() noexcept override
 		{
 			return this->impl_.size();
 		}
@@ -910,7 +1012,7 @@ namespace asio2::detail
 		/**
 		 * @brief Determine whether current code is running in the io_context pool threads.
 		 */
-		virtual bool running_in_threads() const noexcept override
+		virtual bool running_in_threads() noexcept override
 		{
 			return this->impl_.running_in_threads();
 		}
@@ -938,7 +1040,7 @@ namespace asio2::detail
 		 * @brief constructor
 		 */
 		template<class C>
-		explicit user_iopool(C&& copy) : copy_(std::forward<C>(copy))
+		explicit user_iopool(C&& copy) : copy_(std::forward<C>(copy)), stopped_(true), next_(0)
 		{
 			// std::shared_ptr<io_context> , io_context*
 			if constexpr (is_io_context_pointer<copy_value_type>::value)
@@ -975,7 +1077,7 @@ namespace asio2::detail
 		{
 			clear_last_error();
 
-			std::lock_guard<std::mutex> guard(this->mutex_);
+			asio2::unique_locker guard(this->mutex_);
 
 			if (!this->stopped_)
 			{
@@ -993,26 +1095,37 @@ namespace asio2::detail
 		 */
 		virtual void stop() override
 		{
-			std::lock_guard<std::mutex> guard(this->mutex_);
-
-			if (this->stopped_)
-				return;
-
-			// wiat fo all pending events completed.
-			for (auto& iot : this->iots_)
 			{
-				while (iot->pending() > std::size_t(0))
-					std::this_thread::sleep_for(std::chrono::milliseconds(0));
+				asio2::shared_locker guard(this->mutex_);
+
+				if (this->stopped_)
+					return;
+
+				// wiat fo all pending events completed.
+				for (auto& iot : this->iots_)
+				{
+					while (iot->pending() > std::size_t(0))
+						std::this_thread::sleep_for(std::chrono::milliseconds(0));
+				}
 			}
 
-			this->stopped_ = true;
+			{
+				asio2::unique_locker guard(this->mutex_);
+
+				if (this->stopped_)
+					return;
+
+				this->stopped_ = true;
+			}
 		}
 
 		/**
 		 * @brief check whether the io_context pool is stopped
 		 */
-		virtual bool stopped() const noexcept override
+		virtual bool stopped() noexcept override
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			return (this->stopped_);
 		}
 
@@ -1021,14 +1134,18 @@ namespace asio2::detail
 		 */
 		virtual io_t& get(std::size_t index) noexcept override
 		{
-			return *(this->iots_[this->next(index)]);
+			asio2::shared_locker guard(this->mutex_);
+
+			return *(this->iots_[this->next_impl(index)]);
 		}
 
 		/**
 		 * @brief get io_context pool size.
 		 */
-		virtual std::size_t size() const noexcept override
+		virtual std::size_t size() noexcept override
 		{
+			asio2::shared_locker guard(this->mutex_);
+
 			return this->iots_.size();
 		}
 
@@ -1037,41 +1154,58 @@ namespace asio2::detail
 		 */
 		inline std::size_t next(std::size_t index) noexcept
 		{
+			asio2::shared_locker guard(this->mutex_);
+
+			return this->next_impl(index);
+		}
+
+		/**
+		 * @brief Determine whether current code is running in the io_context pool threads.
+		 */
+		virtual bool running_in_threads() noexcept override
+		{
+			asio2::shared_locker guard(this->mutex_);
+
+			return this->running_in_threads_impl();
+		}
+
+	protected:
+		inline bool running_in_threads_impl() noexcept ASIO2_NO_THREAD_SAFETY_ANALYSIS
+		{
+			std::thread::id curr_tid = std::this_thread::get_id();
+
+			for (auto& iot : this->iots_)
+			{
+				if (curr_tid == iot->get_thread_id())
+					return true;
+			}
+
+			return false;
+		}
+
+		inline std::size_t next_impl(std::size_t index) noexcept ASIO2_NO_THREAD_SAFETY_ANALYSIS
+		{
 			// Use a round-robin scheme to choose the next io_context to use. 
 			// Use this->iots_.size() instead of this->size() to avoid call virtual function.
 			return (index == static_cast<std::size_t>(-1) ?
 				((++(this->next_)) % this->iots_.size()) : (index % this->iots_.size()));
 		}
 
-		/**
-		 * @brief Determine whether current code is running in the io_context pool threads.
-		 */
-		virtual bool running_in_threads() const noexcept override
-		{
-			std::thread::id curr_tid = std::this_thread::get_id();
-			for (auto& iot : this->iots_)
-			{
-				if (curr_tid == iot->get_thread_id())
-					return true;
-			}
-			return false;
-		}
-
 	protected:
+		/// 
+		mutable asio2::shared_mutexer            mutex_;
+
 		/// user container copy, maybe the user passed shared_ptr, and expect us to keep it
-		copy_container_type                      copy_;
+		copy_container_type                      copy_    ASIO2_GUARDED_BY(mutex_);
 
 		/// The pool of io_t. 
-		io_container_type                        iots_;
-
-		/// 
-		std::mutex                               mutex_;
+		io_container_type                        iots_    ASIO2_GUARDED_BY(mutex_);
 
 		/// Flag whether the io_context pool has stopped already
-		bool                                     stopped_  = true;
+		bool                                     stopped_ ASIO2_GUARDED_BY(mutex_);
 
 		/// The next io_context to use for a connection. 
-		std::size_t                              next_     = 0;
+		std::size_t                              next_;
 	};
 
 	template<class derived_t, class args_t = void>
@@ -1079,7 +1213,7 @@ namespace asio2::detail
 	{
 	public:
 		template<class T>
-		explicit iopool_cp(T&& v)
+		explicit iopool_cp(T&& v) : next_(0)
 		{
 			using type = typename detail::remove_cvref_t<T>;
 
@@ -1175,14 +1309,23 @@ namespace asio2::detail
 			std::promise<error_code> promise;
 			std::future<error_code> future = promise.get_future();
 
+			io_t* iot = this->iots_[0];
+
 			// We must use asio::post to ensure the wait_stop_timer_ is read write in the 
 			// same thread.
-			asio::post(iots_[0]->context(), [this, this_ptr = derive.selfptr(), promise = std::move(promise)]
+			asio::post(iot->context(), [this, iot, this_ptr = derive.selfptr(), promise = std::move(promise)]
 			() mutable
 			{
-				this->wait_stop_timer_ = std::make_unique<asio::steady_timer>(iots_[0]->context());
+				if (this->wait_stop_timer_)
+				{
+					iot->timers().erase(this->wait_stop_timer_.get());
 
-				this->iots_[0]->timers().emplace(this->wait_stop_timer_.get());
+					detail::cancel_timer(*(this->wait_stop_timer_));
+				}
+
+				this->wait_stop_timer_ = std::make_unique<asio::steady_timer>(iot->context());
+
+				iot->timers().emplace(this->wait_stop_timer_.get());
 
 				this->wait_stop_timer_->expires_after((std::chrono::nanoseconds::max)());
 				this->wait_stop_timer_->async_wait(
@@ -1199,8 +1342,7 @@ namespace asio2::detail
 		}
 
 		/**
-		 * The wait_for() function blocks until all work has finished and 
-		 * until the specified duration has elapsed.
+		 * The wait_for() function blocks until the specified duration has elapsed.
 		 *
 		 * @param rel_time - The duration for which the call may block.
 		 */
@@ -1215,14 +1357,13 @@ namespace asio2::detail
 
 			clear_last_error();
 
-			asio::steady_timer timer(iots_[0]->context());
+			asio::steady_timer timer(this->iots_[0]->context());
 			timer.expires_after(rel_time);
 			timer.wait(get_last_error());
 		}
 
 		/**
-		 * The wait_until() function blocks until all work has finished and 
-		 * until the specified time has been reached.
+		 * The wait_until() function blocks until the specified time has been reached.
 		 *
 		 * @param abs_time - The time point until which the call may block.
 		 */
@@ -1237,7 +1378,7 @@ namespace asio2::detail
 
 			clear_last_error();
 
-			asio::steady_timer timer(iots_[0]->context());
+			asio::steady_timer timer(this->iots_[0]->context());
 			timer.expires_at(abs_time);
 			timer.wait(get_last_error());
 		}
@@ -1259,7 +1400,7 @@ namespace asio2::detail
 			clear_last_error();
 
 			// note: The variable name signals will conflict with the macro signals of qt
-			asio::signal_set signalset(iots_[0]->context());
+			asio::signal_set signalset(this->iots_[0]->context());
 
 			(signalset.add(signal_number), ...);
 
@@ -1285,10 +1426,10 @@ namespace asio2::detail
 			ASIO2_ASSERT(!iots_.empty());
 			std::size_t n = (index == static_cast<std::size_t>(-1) ?
 				((++(this->next_)) % this->iots_.size()) : (index % this->iots_.size()));
-			return *(iots_[n]);
+			return *(this->iots_[n]);
 		}
 
-		inline bool is_iopool_stopped() const noexcept
+		inline bool is_iopool_stopped() noexcept
 		{
 			return this->iopool_->stopped();
 		}
@@ -1323,18 +1464,20 @@ namespace asio2::detail
 
 			derived_t& derive = static_cast<derived_t&>(*this);
 
+			io_t* iot = this->iots_[0];
+
 			// if the server's or client's iopool is user_iopool, and when the server.stop 
 			// or client.stop is called, we need notify the timer to cancel for the function
 			// wait_stop, otherwise the wait_stop function will blocked forever.
 			// We must use asio::post to ensure the wait_stop_timer_ is read write in the 
 			// same thread.
-			asio::post(iots_[0]->context(), [this, this_ptr = derive.selfptr()]() mutable
+			asio::post(iot->context(), [this, iot, this_ptr = derive.selfptr()]() mutable
 			{
 				detail::ignore_unused(this_ptr);
 
 				if (this->wait_stop_timer_)
 				{
-					this->iots_[0]->timers().erase(this->wait_stop_timer_.get());
+					iot->timers().erase(this->wait_stop_timer_.get());
 
 					detail::cancel_timer(*(this->wait_stop_timer_));
 				}
@@ -1351,7 +1494,7 @@ namespace asio2::detail
 		std::vector<io_t*>                       iots_;
 
 		/// The next io_context to use for a connection. 
-		std::size_t                              next_ = 0;
+		std::size_t                              next_;
 
 		/// the timer used for wait_stop function.
 		std::unique_ptr<asio::steady_timer>      wait_stop_timer_;
