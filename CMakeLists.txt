@@ -41,7 +41,6 @@ if (MSVC)
     endif ()
 else()
     add_definitions(-DANDROID)
-    set(VCPKG_CMAKE_SYSTEM_NAME Android)
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fPIE")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fPIE")

@@ -94,7 +94,7 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
         usleep(100);
     }
 
-    SPDLOG_INFO("get il2cpp address: %#lx", il2cppAddress);
+    SPDLOG_INFO("get il2cpp address: {:08x}", il2cppAddress);
 // 初始化il2cpp API
 #define DO_API(r, n, p) n = (r(*) p)gum_module_find_export_by_name("libil2cpp.so", #n)
 #include "Il2cppApi/il2cppApiFunctions.h"
@@ -154,7 +154,7 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                         std::string body = req_body.dump();
                         while(1) {
                             now = getUnixTimestamp();
-                            if (now - last_check > 1000) {
+                            if (now - last_check > 900) {
                                 last_check = now;
                                 if (auto res = client.Post(path, body, "application/json")) {
                                     try

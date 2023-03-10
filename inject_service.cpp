@@ -177,7 +177,7 @@ int inject(const char *process_name, const char *so_path, int service_port, int 
     frida_injector_close_sync(injector, NULL, NULL);
     g_object_unref(injector);
 
-    apps_state[process_name] = {process_name, pid, speed};
+    if (result == 0) apps_state[process_name] = {process_name, pid, speed};
 
     return result;
 }
@@ -233,9 +233,10 @@ int main(int argc, const char **argv)
         asio2::ignore_unused(session_ptr);
         try {
             json body = json::parse(req.body());
+            auto process_name = body["name"].get<std::string>();
             bool result = CheckUnity(body["path"]);
-            json content = {{"status", 0}, body["name"], {"result", result}};
-            rep.fill_json(content);
+            json content = {{"status", 0}, {"name", process_name}, {"result", result}};
+            rep.fill_json(std::string(content.dump()));
         }
         catch(const json::exception&) {
             rep.fill_page(http::status::bad_request);
@@ -261,11 +262,11 @@ int main(int argc, const char **argv)
                 return;
             }
 
-            auto so_full_path = fmt::format("{}/{}", current_path, so_path);
-            // auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
-            // auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}", current_path, so_path, so_full_path);
-            // SPDLOG_DEBUG("call {}", cmd);
-            // exec(cmd);
+            // auto so_full_path = fmt::format("{}/{}", current_path, so_path);
+            auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
+            auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}; chmod 777 {2}", current_path, so_path, so_full_path);
+            SPDLOG_DEBUG("call {}", cmd);
+            exec(cmd);
             result = inject(process_name.c_str(), so_full_path.c_str(), service_port, speed);
             
             rep.fill_json(std::string(content.dump()));
