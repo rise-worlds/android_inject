@@ -114,21 +114,20 @@ add_subdirectory(frida-inject-custom)
 # add_library(UnityCheat SHARED UnityCheat.cpp)
 # target_link_libraries(UnityCheat dobby frida-gum utils_static)
 
-add_library(UnityCheat SHARED UnityCheat2.cpp)
-target_link_libraries(UnityCheat frida-gum utils_static)
+add_library(inject_speed SHARED inject_speed.cpp)
+target_link_libraries(inject_speed frida-gum utils_static)
 
 add_executable(inject_service inject_service.cpp 
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/unzip.c
     ${CMAKE_CURRENT_SOURCE_DIR}/zlib/contrib/minizip/ioapi.c
     )
 target_include_directories(inject_service PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
-add_dependencies(${PROJECT_NAME} zlibstatic)
+add_dependencies(inject_service zlibstatic)
 target_link_libraries(inject_service zlibstatic frida-core log)
 
 if (CMAKE_BUILD_TYPE MATCHES "^Rel.*$")
-set_target_properties(UnityCheat PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
-# set_target_properties(UnityCheat2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
-set_target_properties(inject_service PROPERTIES LINK_FLAGS "-Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/inject_service.version")
-endif()
+set_target_properties(inject_speed inject_service PROPERTIES LINK_FLAGS "${LINK_FLAGS} -Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
+set_target_properties(inject_service PROPERTIES LINK_FLAGS "${LINK_FLAGS} -Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/inject_service.version")
 
-# install(TARGETS inject_service UnityCheat)
+# install(TARGETS inject_service inject_speed)
+endif()
