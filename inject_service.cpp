@@ -304,8 +304,8 @@ int main(int argc, const char **argv)
                 json["speed"] = apps_state[process_name].speed;
             } else {
                 // sync status
-                auto pid = json["pid"].get<int>();
-                auto speed = json["speed"].get<int>();
+                auto pid = body["pid"].get<int>();
+                auto speed = body["speed"].get<int>();
                 apps_state[process_name] = {process_name, pid, speed};
                 json["speed"] = speed;
             }
