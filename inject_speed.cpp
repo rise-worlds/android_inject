@@ -18,8 +18,51 @@ static int g_speed = 1.0;
 static bool g_modify_time = false;
 static struct timeval g_tv = {0, 0};
 static struct timespec g_ts = {0, 0};
-
 static std::shared_ptr<std::thread> gp_run;
+
+constexpr const char *cocos2d_mornal[] = {
+    "_ZN7cocos2d11CCScheduler6updateEf",            // cocos2dx cpp 3.7.1
+    "_ZN7cocos2d9Scheduler6updateEf"                // cocos creator 2.4.11
+    };
+
+constexpr const char *cocos2d_special[] = {
+    "_ZN7cocos2d15CCActionManager6updateEf",
+    "_ZN7cocos2d11CCScheduler4tickEf",
+    "_ZN7cocos2d13ActionManager6updateEf",          // cocos2dx cpp 3.7.1
+    "_ZN7cocos2d5Speed4stepEf",                     // cocos2dx cpp 3.7.1
+    "_ZN7cocos2d4Node8scheduleEMNS_3RefEFvfEf"      // cocos2dx cpp 3.7.1
+    };
+
+typedef void (*cocos2dx_update_fun)(void *v, float dt);
+typedef void *(*cocos2dx_update_fun2)(void *v, float dt);
+typedef bool (*cocos2dx_update_fun3)(void *v, float dt);
+static gpointer cocos_normal_update1 = nullptr;
+static gpointer cocos_normal_update2 = nullptr;
+static gpointer cocos_special_update1 = nullptr;
+static gpointer cocos_special_update2 = nullptr;
+static gpointer cocos_special_update3 = nullptr;
+static gpointer cocos_special_update4 = nullptr;
+static gpointer cocos_special_update5 = nullptr;
+static bool waitCocos2dxSoLoaded = false;
+
+cocos2dx_update_fun COCOS_NORMAL_UPDATE;
+static void cocos_normal_update_hook(void *v, float dt);
+
+cocos2dx_update_fun COCOS_SPECIAL_UPDATE_ONE;
+static void cocos_special_update_hook_one(void *v, float dt);
+
+cocos2dx_update_fun2 COCOS_SPECIAL_UPDATE_TWO;
+static void *cocos_special_update_hook_two(void *v, float dt);
+
+cocos2dx_update_fun2 COCOS_SPECIAL_UPDATE_THREE;
+static void *cocos_special_update_hook_three(void *v, float dt);
+
+cocos2dx_update_fun3 COCOS_SPECIAL_UPDATE_FOUR;
+static bool cocos_special_update_hook_four(void *__hidden, float radio);
+
+cocos2dx_update_fun2 COCOS_SPECIAL_UPDATE_FIVE;
+static void *cocos_special_update_hook_five(void *envirenment, float delater);
+
 static unsigned long il2cppAddress = 0;  // 存储il2cpp.so基地址
 int (*Screen$$get_height)();             // 预定义一个方法
 int (*Screen$$get_width)();              // 预定义一个方法
@@ -33,16 +76,94 @@ void (*Time$$set_fixedDeltaTime)(float); // 预定义一个方法
 // static int gettimeofday_hook(struct timeval *tv, struct timezone *tz);
 // static int clock_gettime_hook(clockid_t clock, struct timespec *ts);
 
-int64_t getUnixTimestamp()
+inline int64_t getUnixTimestamp()
 {
     auto duration = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
+static gboolean moduleFound(const GumModuleDetails *details, gpointer user_data)
+{
+    const char *name = details->name;
+    const char *path = details->path;
+    SPDLOG_INFO("module name: {}", name);
+    SPDLOG_INFO("base: {:#08x}, size: {}, {}", details->range->base_address, details->range->size, path);
+
+    cocos_normal_update1 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_mornal[0]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update1));
+    cocos_normal_update2 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_mornal[1]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update2));
+    cocos_special_update1 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[0]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update1));
+    cocos_special_update2 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[1]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update2));
+    cocos_special_update3 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[2]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update3));
+    cocos_special_update4 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[3]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update4));
+    cocos_special_update5 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[4]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update5));
+
+    waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr)
+                                || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr)
+                                || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr);
+    return !waitCocos2dxSoLoaded;
+}
+
+void initUnity3Dil2cpp()
+{
+    SPDLOG_INFO("get il2cpp address: {:#08x}", il2cppAddress);
+// 初始化il2cpp API
+#define DO_API(r, n, p) n = (r(*) p)gum_module_find_export_by_name("libil2cpp.so", #n)
+#include "Il2cppApi/il2cppApiFunctions.h"
+#undef DO_API
+    // il2cpp_resolve_icall = reinterpret_cast<Il2CppMethodPointer (*)(const char *name)>(gum_module_find_export_by_name("libil2cpp.so", "il2cpp_resolve_icall"));
+    SPDLOG_INFO("get il2cpp_resolve_icall address: {}", fmt::ptr(il2cpp_resolve_icall));
+
+    do
+    {
+        // il2cpp_init
+        InitResolveFunc(Screen$$get_height, "UnityEngine.Screen::get_height");
+        SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_height));
+        InitResolveFunc(Screen$$get_width, "UnityEngine.Screen::get_width");
+        SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_width));
+        // 使用Unity游戏内的导出方法 获取屏幕宽高
+        if (Screen$$get_height && Screen$$get_width)
+        {
+            SPDLOG_INFO("Screen size is {}x{}", Screen$$get_width(), Screen$$get_height());
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    } while (!Screen$$get_height && !Screen$$get_width);
+
+    InitResolveFunc(Time$$set_timeScale, "UnityEngine.Time::set_timeScale");
+    InitResolveFunc(Time$$get_timeScale, "UnityEngine.Time::get_timeScale");
+    SPDLOG_DEBUG("get get_timeScale: {}", fmt::ptr(Time$$get_timeScale));
+    SPDLOG_DEBUG("get set_timeScale: {}", fmt::ptr(Time$$set_timeScale));
+    if (Time$$get_timeScale && Time$$set_timeScale)
+    {
+        SPDLOG_INFO("Time scale is {}", Time$$get_timeScale());
+        Time$$set_timeScale(10.0f);
+        SPDLOG_INFO("Time scale set {}", Time$$get_timeScale());
+    }
+
+    InitResolveFunc(Time$$get_deltaTime, "UnityEngine.Time::get_fixedDeltaTime");
+    SPDLOG_DEBUG("get get_deltaTime: {}", fmt::ptr(Time$$get_deltaTime));
+
+    InitResolveFunc(Time$$set_fixedDeltaTime, "UnityEngine.Time::set_fixedDeltaTime");
+    InitResolveFunc(Time$$get_fixedDeltaTime, "UnityEngine.Time::get_fixedDeltaTime");
+    SPDLOG_DEBUG("get get_fixedDeltaTime: {}", fmt::ptr(Time$$get_fixedDeltaTime));
+    SPDLOG_DEBUG("get set_fixedDeltaTime: {}", fmt::ptr(Time$$set_fixedDeltaTime));
+    if (Time$$get_fixedDeltaTime && Time$$set_fixedDeltaTime)
+    {
+        auto value = Time$$get_fixedDeltaTime();
+        SPDLOG_INFO("fixed delta time is {}", value);
+        Time$$set_fixedDeltaTime(value);
+        SPDLOG_INFO("fixed delta time set {}", Time$$get_fixedDeltaTime());
+    }
+}
+
 YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 {
-    GumInterceptor *interceptor = nullptr;
-
     if (data)
     {
         try
@@ -60,96 +181,124 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
             return;
         }
     }
-    SPDLOG_INFO("example_agent_main(\"{}\")", data);
+    // SPDLOG_INFO("example_agent_main(\"{}\")", data);
     SPDLOG_INFO("service port: {}", server_port);
     SPDLOG_INFO("speed: {}", g_speed);
 
     /* We don't want to our library to be unloaded after we return. */
     *stay_resident = TRUE;
 
-    gum_init_embedded();
-
+    // GumInterceptor *interceptor = nullptr;
     // interceptor = gum_interceptor_obtain();
     // // listener = my_callback_listener_new();
     //
     // /* Transactions are optional but improve performance with multiple hooks. */
     // gum_interceptor_begin_transaction(interceptor);
-
+    //
     // gpointer open_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "open"));
     // gum_interceptor_replace(interceptor, open_origin_address, reinterpret_cast<gpointer>(&open_hook), NULL, NULL);
     // gpointer gettimeofday_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "gettimeofday"));
     // gum_interceptor_replace(interceptor, gettimeofday_origin_address, reinterpret_cast<gpointer>(&gettimeofday_hook), NULL, NULL);
     // gpointer clock_gettime_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "clock_gettime"));
     // gum_interceptor_replace(interceptor, clock_gettime_origin_address, reinterpret_cast<gpointer>(&clock_gettime_hook), NULL, NULL);
+    //
+    // gum_interceptor_end_transaction(interceptor);
 
-    il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
-    while (il2cppAddress == 0)
-    { // 动态库已经完全加载
-        il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
-        if (il2cppAddress != 0)
-        {
-            SPDLOG_DEBUG("libil2cpp.so BaseAddress: {}", il2cppAddress);
-            break;
-        }
-        usleep(100);
-    }
+    // SPDLOG_INFO("start test enumerate modlues.");
+    // gum_process_enumerate_modules(moduleFound, nullptr);
 
-    SPDLOG_INFO("get il2cpp address: {:08x}", il2cppAddress);
-// 初始化il2cpp API
-#define DO_API(r, n, p) n = (r(*) p)gum_module_find_export_by_name("libil2cpp.so", #n)
-#include "Il2cppApi/il2cppApiFunctions.h"
-#undef DO_API
-    // il2cpp_resolve_icall = reinterpret_cast<Il2CppMethodPointer (*)(const char *name)>(gum_module_find_export_by_name("libil2cpp.so", "il2cpp_resolve_icall"));
-    SPDLOG_INFO("get il2cpp_resolve_icall address: {}", fmt::ptr(il2cpp_resolve_icall));
-
-    gp_run = std::make_shared<std::thread>([]()
+    gp_run = std::make_shared<std::thread>([&]()
                                            {
+                        SPDLOG_INFO("work thread started.");
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                        
+                        // gpointer lua = nullptr;
                         do {
-                            // il2cpp_init
-                            InitResolveFunc(Screen$$get_height, "UnityEngine.Screen::get_height");
-                            SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_height));
-                            InitResolveFunc(Screen$$get_width, "UnityEngine.Screen::get_width");
-                            SPDLOG_DEBUG("get UnityEngine.Screen::get_height address: {}", fmt::ptr(Screen$$get_width));
-                            // 使用Unity游戏内的导出方法 获取屏幕宽高
-                            if (Screen$$get_height && Screen$$get_width)
+                            SPDLOG_INFO("start check piling.");
+                            // lua = reinterpret_cast<gpointer>(gum_module_find_export_by_name(nullptr, "luaL_loadbufferx"));
+                            
+                            // uinty3d il2cpp
+                            il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
+                            if (il2cppAddress)
                             {
-                                SPDLOG_INFO("Screen size is {}x{}", Screen$$get_width(), Screen$$get_height());
+                                SPDLOG_INFO("get il2cpp address: {:#08x}", il2cppAddress);
+                                break;
+                            }
+
+                            do {
+                                gum_process_enumerate_modules(moduleFound, nullptr);
+                            } while(false);
+                            waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr)
+                                || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr)
+                                || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr);
+                            if (waitCocos2dxSoLoaded) {
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update1));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update2));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update1));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update2));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update3));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update4));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update5));
+                                break;
                             }
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                        } while (!Screen$$get_height && !Screen$$get_width);
-
-                        InitResolveFunc(Time$$set_timeScale, "UnityEngine.Time::set_timeScale");
-                        InitResolveFunc(Time$$get_timeScale, "UnityEngine.Time::get_timeScale");
-                        SPDLOG_DEBUG("get get_timeScale: {}", fmt::ptr(Time$$get_timeScale));
-                        SPDLOG_DEBUG("get set_timeScale: {}", fmt::ptr(Time$$set_timeScale));
-                        if (Time$$get_timeScale && Time$$set_timeScale)
-                        {
-                            SPDLOG_INFO("Time scale is {}", Time$$get_timeScale());
-                            Time$$set_timeScale(10.0f);
-                            SPDLOG_INFO("Time scale set {}", Time$$get_timeScale());
-                        }
-
-                        InitResolveFunc(Time$$get_deltaTime, "UnityEngine.Time::get_fixedDeltaTime");
-                        SPDLOG_DEBUG("get get_deltaTime: {}", fmt::ptr(Time$$get_deltaTime));
-
-                        InitResolveFunc(Time$$set_fixedDeltaTime, "UnityEngine.Time::set_fixedDeltaTime");
-                        InitResolveFunc(Time$$get_fixedDeltaTime, "UnityEngine.Time::get_fixedDeltaTime");
-                        SPDLOG_DEBUG("get get_fixedDeltaTime: {}", fmt::ptr(Time$$get_fixedDeltaTime));
-                        SPDLOG_DEBUG("get set_fixedDeltaTime: {}", fmt::ptr(Time$$set_fixedDeltaTime));
-                        if (Time$$get_fixedDeltaTime && Time$$set_fixedDeltaTime)
-                        {
-                            auto value = Time$$get_fixedDeltaTime();
-                            SPDLOG_INFO("fixed delta time is {}", value);
-                            Time$$set_fixedDeltaTime(value);
-                            SPDLOG_INFO("fixed delta time set {}", Time$$get_fixedDeltaTime());
-                        }
+                        } while (true);
                         
+                        // 动态库已经完全加载
+                        if (il2cppAddress)
+                        {
+                            initUnity3Dil2cpp();
+                        }
+                        if (waitCocos2dxSoLoaded)
+                        {
+                            GumInterceptor *interceptor  = gum_interceptor_obtain();
+                            gum_interceptor_begin_transaction(interceptor);
+                            if (cocos_normal_update1)
+                            {
+                                COCOS_NORMAL_UPDATE = reinterpret_cast<cocos2dx_update_fun>(cocos_normal_update1);
+                                gum_interceptor_replace(interceptor, cocos_normal_update1, reinterpret_cast<gpointer>(&cocos_normal_update_hook), NULL, NULL);
+                            }
+                            else if (cocos_normal_update2)
+                            {
+                                COCOS_NORMAL_UPDATE = reinterpret_cast<cocos2dx_update_fun>(cocos_normal_update2);
+                                gum_interceptor_replace(interceptor, cocos_normal_update2, reinterpret_cast<gpointer>(&cocos_normal_update_hook), NULL, NULL);
+                            }
+
+                            if (cocos_special_update1)
+                            {
+                                COCOS_SPECIAL_UPDATE_ONE = reinterpret_cast<cocos2dx_update_fun>(cocos_special_update1);
+                                gum_interceptor_replace(interceptor, cocos_special_update1, reinterpret_cast<gpointer>(&cocos_special_update_hook_one), NULL, NULL);
+                            }
+                            if (cocos_special_update2)
+                            {
+                                COCOS_SPECIAL_UPDATE_TWO = reinterpret_cast<cocos2dx_update_fun2>(cocos_special_update2);
+                                gum_interceptor_replace(interceptor, cocos_special_update2, reinterpret_cast<gpointer>(&cocos_special_update_hook_two), NULL, NULL);
+                            }
+                            if (cocos_special_update3)
+                            {
+                                COCOS_SPECIAL_UPDATE_THREE = reinterpret_cast<cocos2dx_update_fun2>(cocos_special_update3);
+                                gum_interceptor_replace(interceptor, cocos_special_update3, reinterpret_cast<gpointer>(&cocos_special_update_hook_three), NULL, NULL);
+                            }
+                            if (cocos_special_update4)
+                            {
+                                COCOS_SPECIAL_UPDATE_FOUR = reinterpret_cast<cocos2dx_update_fun3>(cocos_special_update4);
+                                gum_interceptor_replace(interceptor, cocos_special_update4, reinterpret_cast<gpointer>(&cocos_special_update_hook_four), NULL, NULL);
+                            }
+                            if (cocos_special_update5)
+                            {
+                                COCOS_SPECIAL_UPDATE_FIVE = reinterpret_cast<cocos2dx_update_fun2>(cocos_special_update5);
+                                gum_interceptor_replace(interceptor, cocos_special_update5, reinterpret_cast<gpointer>(&cocos_special_update_hook_five), NULL, NULL);
+                            }
+                            gum_interceptor_end_transaction(interceptor);
+                        }
+
+                        // 进入主循环
                         int64_t last_check = getUnixTimestamp(), now;
                         httplib::Client client("localhost", server_port);
                         std::string path = fmt::format("/status?name={}", process_name);
                         json req_body = {{"name", process_name}, {"speed", g_speed}, {"pid", pid}};
                         std::string body = req_body.dump();
-                        while(1) {
+                        while(true) {
                             now = getUnixTimestamp();
                             if (now - last_check > 900) {
                                 last_check = now;
@@ -176,8 +325,6 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                         } });
     gp_run->join();
 
-    // gum_interceptor_end_transaction(interceptor);
-    //
     // // g_object_unref (listener);
     // // g_object_unref (interceptor);
     // // gum_deinit_embedded();
@@ -234,6 +381,55 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 //     return result;
 // }
 
+static void cocos_normal_update_hook(void *v, float dt)
+{
+    dt = dt * g_speed;
+
+    float repeatTime = 0.0;
+
+    while (repeatTime < g_speed)
+    {
+        repeatTime = repeatTime + 0.5;
+        COCOS_NORMAL_UPDATE(v, dt);
+    }
+
+    COCOS_NORMAL_UPDATE(v, dt);
+}
+
+static void cocos_special_update_hook_one(void *v, float dt)
+{
+    dt = dt * g_speed;
+    COCOS_SPECIAL_UPDATE_ONE(v, dt);
+}
+
+static void *cocos_special_update_hook_two(void *v, float dt)
+{
+    dt = dt * g_speed;
+    return COCOS_SPECIAL_UPDATE_TWO(v, dt);
+}
+
+static void *cocos_special_update_hook_three(void *v, float dt)
+{
+    dt = dt * g_speed;
+    return COCOS_SPECIAL_UPDATE_THREE(v, dt);
+}
+
+static bool cocos_special_update_hook_four(void *__hidden, float radio)
+{
+    SPDLOG_DEBUG("speed_step = {}", radio);
+
+    radio = radio * g_speed;
+
+    return COCOS_SPECIAL_UPDATE_FOUR(__hidden, radio);
+}
+
+static void *cocos_special_update_hook_five(void *envirenment, float delater)
+{
+    SPDLOG_DEBUG("delater = {}", delater);
+
+    return COCOS_SPECIAL_UPDATE_FIVE(envirenment, delater);
+}
+
 __attribute__((constructor)) void constructor_main()
 {
     LOGD("YYCheat");
@@ -241,4 +437,7 @@ __attribute__((constructor)) void constructor_main()
     auto logger = std::make_shared<spdlog::logger>("InjectCheat", spdlog::sinks_init_list{android_sink});
     spdlog::set_default_logger(logger);
     spdlog::set_level(spdlog::level::debug);
+
+    gum_init_embedded();
+    SPDLOG_DEBUG("frida-gum init");
 }

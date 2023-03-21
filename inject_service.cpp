@@ -261,7 +261,7 @@ int main(int argc, const char **argv)
             const char* so_path = nullptr;
             json json = {{"status", 0}, {"name", process_name}, {"result", result}};
             if (type == 1) {
-                so_path = "libUnityCheat.so";
+                so_path = "libinject_speed.so";
             } else {
                 json["result"] = -1;
                 rep.fill_json(std::string(json.dump()));
