@@ -126,7 +126,7 @@ add_dependencies(inject_service zlibstatic)
 target_link_libraries(inject_service zlibstatic frida-core log)
 
 if (CMAKE_BUILD_TYPE MATCHES "^Rel.*$")
-set_target_properties(inject_speed inject_service PROPERTIES LINK_FLAGS "${LINK_FLAGS} -Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
+set_target_properties(inject_speed PROPERTIES LINK_FLAGS "${LINK_FLAGS} -Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")
 set_target_properties(inject_service PROPERTIES LINK_FLAGS "${LINK_FLAGS} -Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/inject_service.version")
 
 # install(TARGETS inject_service inject_speed)
