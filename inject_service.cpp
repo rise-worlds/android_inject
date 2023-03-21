@@ -154,9 +154,12 @@ int inject(const char *process_name, const char *so_path, int service_port, int 
     SPDLOG_INFO("target={} so={} target_pid={} speed={}", process_name, so_path, pid, speed);
 
     auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
-    auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}; chmod 777 {2}", current_path, so_path, so_full_path);
-    SPDLOG_DEBUG("call {}", cmd);
-    exec(cmd);
+    if (current_path.compare("/data/local/tmp") != 0)
+    {
+        auto cmd = fmt::format("rm {2}; cp '{0}/{1}' {2}; chmod 777 {2}", current_path, so_path, so_full_path);
+        SPDLOG_DEBUG("call {}", cmd);
+        exec(cmd);
+    }
     if (setxattr(so_full_path.c_str(), XATTR_NAME_SELINUX, context, strlen(context) + 1, 0) != 0)
     {
         SPDLOG_ERROR("Failed to set SELinux permissions");
@@ -218,11 +221,7 @@ int main(int argc, const char **argv)
 
     asio2::http_server server;
 
-    server.bind_recv([&](http::web_request &req, http::web_response &rep)
-                     {
-                        asio2::ignore_unused(req, rep);
-                        // all http and websocket request will goto here first.
-                        SPDLOG_INFO("path: {}, query: {}", req.path(), req.query()); })
+    server
         .bind_start([&]()
                     { SPDLOG_INFO("start http server : {} {} {} {}",
                                   server.listen_address(), server.listen_port(),
@@ -322,7 +321,7 @@ int main(int argc, const char **argv)
         asio2::ignore_unused(req);
         rep.fill_page(http::status::not_found); });
 
-    server.start("0.0.0.0", service_port);
+    server.start("localhost", service_port);
 
     // httplib::Server server;
     // server.set_error_handler([](const Request & /*req*/, Response &res) {
