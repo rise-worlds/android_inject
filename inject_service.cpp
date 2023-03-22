@@ -14,8 +14,7 @@
 #include <spdlog/sinks/android_sink.h>
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/daily_file_sink.h>
-#include <asio2/asio2.hpp>
-#include <asio2/tcp/tcp_server.hpp>
+#define CPPHTTPLIB_THREAD_POOL_COUNT 1
 #include <httplib/httplib.h>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -38,40 +37,6 @@ int daemon();
 
 bool copyFile(const std::string &from, const std::string &to);
 bool exec(const std::string &cmd);
-
-struct aop_log
-{
-    bool before(http::web_request &req, http::web_response &rep)
-    {
-        asio2::ignore_unused(rep);
-        SPDLOG_DEBUG("aop_log before {}", req.method_string().data());
-        return true;
-    }
-    bool after(std::shared_ptr<asio2::http_session> &session_ptr, http::web_request &req, http::web_response &rep)
-    {
-        ASIO2_ASSERT(asio2::get_current_caller<std::shared_ptr<asio2::http_session>>().get() == session_ptr.get());
-        asio2::ignore_unused(session_ptr, req, rep);
-        SPDLOG_DEBUG("aop_log after");
-        return true;
-    }
-};
-
-struct aop_check
-{
-    bool before(std::shared_ptr<asio2::http_session> &session_ptr, http::web_request &req, http::web_response &rep)
-    {
-        ASIO2_ASSERT(asio2::get_current_caller<std::shared_ptr<asio2::http_session>>().get() == session_ptr.get());
-        asio2::ignore_unused(session_ptr, req, rep);
-        SPDLOG_DEBUG("aop_check before");
-        return true;
-    }
-    bool after(http::web_request &req, http::web_response &rep)
-    {
-        asio2::ignore_unused(req, rep);
-        SPDLOG_DEBUG("aop_check after");
-        return true;
-    }
-};
 
 bool CheckUnity(const std::string &zipFilePath)
 {
@@ -219,39 +184,40 @@ int main(int argc, const char **argv)
     frida_init();
     frida_selinux_patch_policy();
 
-    asio2::http_server server;
+    using namespace httplib;
+    Server _server;
+    _server.set_error_handler([](const Request & /*req*/, Response &res) {
+        const char *fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
+        char buf[BUFSIZ];
+        snprintf(buf, sizeof(buf), fmt, res.status);
+        res.set_content(buf, "text/html");
+    });
 
-    server
-        .bind_start([&]()
-                    { SPDLOG_INFO("start http server : {} {} {} {}",
-                                  server.listen_address(), server.listen_port(),
-                                  asio2::last_error_val(), asio2::last_error_msg()); })
-        .bind_stop([&]()
-                   { SPDLOG_INFO("stop http server : {} {}",
-                                 asio2::last_error_val(), asio2::last_error_msg()); });
+    _server.set_logger([](const Request &req, const Response &res) {
+        SPDLOG_DEBUG("{} {}", req.method, req.path);
+    });
 
-    server.bind<http::verb::post>(
-        "/app_u3d", [](std::shared_ptr<asio2::http_session> &session_ptr, http::web_request &req, http::web_response &rep)
+    _server.Post(
+        "/app_u3d", [](const Request & req, Response &res)
         {
-        asio2::ignore_unused(session_ptr);
         try {
-            json body = json::parse(req.body());
+            json body = json::parse(req.body);
             auto process_name = body["name"].get<std::string>();
             bool result = CheckUnity(body["path"]);
             json json = {{"status", 0}, {"name", process_name}, {"result", result}};
             std::string content = json.dump();
-            SPDLOG_DEBUG(content);
-            rep.fill_json(content);
+            // SPDLOG_DEBUG(content);
+            res.set_content(content, "application/json");
         }
         catch(const json::exception&) {
-            rep.fill_page(http::status::bad_request);
+            res.status = 400;
         } });
 
-    server.bind<http::verb::post>(
-        "/inject", [](http::web_request &req, http::web_response &rep)
+    _server.Post(
+        "/inject", [](const Request & req, Response &res)
         {
         try {
-            json body = json::parse(req.body());
+            json body = json::parse(req.body);
 
             int result = 0;
             auto process_name = body["name"].get<std::string>();
@@ -263,7 +229,7 @@ int main(int argc, const char **argv)
                 so_path = "libinject_speed.so";
             } else {
                 json["result"] = -1;
-                rep.fill_json(std::string(json.dump()));
+                res.set_content(std::string(json.dump()), "application/json");
                 return;
             }
 
@@ -271,31 +237,16 @@ int main(int argc, const char **argv)
             json["result"] = result;
             
             std::string content = json.dump();
-            rep.fill_json(content);
+            // SPDLOG_DEBUG(content);
+            res.set_content(content, "application/json");
         } 
         catch(const json::exception&) {
-            rep.fill_page(http::status::bad_request);
+            res.status = 400;
         } });
 
-    server.bind<http::verb::get>("/ping", [](http::web_request &req, http::web_response &rep)
-                                  { 
+    _server.Post("/status", [](const Request & req, Response &res) {
         try {
-            json json = {{"status", 0}};
-            std::string content = json.dump();
-            rep.fill_json(content);
-        }
-        catch(const json::exception&) {
-            rep.fill_page(http::status::bad_request);
-        } });
-
-    server.bind<http::verb::post>("/status", [](http::web_request &req, http::web_response &rep)
-                                 { 
-        try {
-            // auto query = req.query();
-            // auto pos = query.find("=");
-            // std::string process_name = query.substr(pos+1, query.size() - pos - 1).data();
-
-            json body = json::parse(req.body());
+            json body = json::parse(req.body);
             auto process_name = body["name"].get<std::string>();
             json json = {{"status", 0}, {"name", process_name}, {"speed", 0}};
             if (apps_state.count(process_name))
@@ -309,38 +260,21 @@ int main(int argc, const char **argv)
                 json["speed"] = speed;
             }
             std::string content = json.dump();
-            SPDLOG_DEBUG(content);
-            rep.fill_json(content);
+            // SPDLOG_DEBUG(content);
+            res.set_content(content, "application/json");
         }
         catch(const json::exception&) {
-            rep.fill_page(http::status::bad_request);
-        } });
-
-    server.bind_not_found([](http::web_request &req, http::web_response &rep)
-                          {
-        asio2::ignore_unused(req);
-        rep.fill_page(http::status::not_found); });
-
-    server.start("localhost", service_port);
-
-    // httplib::Server server;
-    // server.set_error_handler([](const Request & /*req*/, Response &res) {
-    //     const char *fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
-    //     char buf[BUFSIZ];
-    //     snprintf(buf, sizeof(buf), fmt, res.status);
-    //     res.set_content(buf, "text/html");
-    // });
-
-    // server.set_logger([](const Request &req, const Response &res) {
-    //     printf("%s", log(req, res).c_str());
-    // });
+            res.status = 400;
+        }
+    });
     
-    // server.listen("localhost", service_port);
+    auto httpThread = std::thread([&]() { _server.listen("localhost", service_port); });
 
     while (std::getchar() != '\n')
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    server.stop();
+    _server.stop();
+    httpThread.join();
 
     SPDLOG_DEBUG("frida deinit");
     frida_deinit();

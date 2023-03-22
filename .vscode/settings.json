@@ -187,6 +187,7 @@
         "__tuple": "cpp",
         "bitset": "cpp",
         "cwctype": "cpp",
-        "__std_stream": "cpp"
+        "__std_stream": "cpp",
+        "*.ipp": "cpp"
     },
 }

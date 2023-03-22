@@ -74,7 +74,7 @@ add_definitions(
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/
-    ${CMAKE_CURRENT_SOURCE_DIR}/asio
+    # ${CMAKE_CURRENT_SOURCE_DIR}/asio
     ${CMAKE_CURRENT_SOURCE_DIR}/fmt/include
     ${CMAKE_CURRENT_SOURCE_DIR}/nlohmann_json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/spdlog/include
