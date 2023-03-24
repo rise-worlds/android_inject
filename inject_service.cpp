@@ -14,6 +14,7 @@
 #include <spdlog/sinks/android_sink.h>
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/daily_file_sink.h>
+#define CPPHTTPLIB_ZLIB_SUPPORT
 #define CPPHTTPLIB_THREAD_POOL_COUNT 1
 #include <httplib/httplib.h>
 #include <nlohmann/json.hpp>

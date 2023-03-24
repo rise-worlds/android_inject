@@ -21,29 +21,37 @@ static struct timespec g_ts = {0, 0};
 static std::shared_ptr<std::thread> gp_run;
 
 constexpr const char *cocos2d_mornal[] = {
-    "_ZN7cocos2d11CCScheduler6updateEf",            // cocos2dx cpp 3.7.1
-    "_ZN7cocos2d9Scheduler6updateEf"                // cocos creator 2.4.11
-    };
+    "_ZN7cocos2d11CCScheduler6updateEf", // cocos2dx cpp 3.7.1
+    "_ZN7cocos2d9Scheduler6updateEf",    // cocos creator 2.4.11
+    "_ZN7cocos2d9SchedulerC2Ev",         // cocos2dx cpp old?
+};
 
 constexpr const char *cocos2d_special[] = {
     "_ZN7cocos2d15CCActionManager6updateEf",
     "_ZN7cocos2d11CCScheduler4tickEf",
-    "_ZN7cocos2d13ActionManager6updateEf",          // cocos2dx cpp 3.7.1
-    "_ZN7cocos2d5Speed4stepEf",                     // cocos2dx cpp 3.7.1
-    "_ZN7cocos2d4Node8scheduleEMNS_3RefEFvfEf"      // cocos2dx cpp 3.7.1
-    };
+    "_ZN7cocos2d13ActionManager6updateEf",      // cocos2dx cpp 3.7.1
+    "_ZN7cocos2d5Speed4stepEf",                 // cocos2dx cpp 3.7.1
+    "_ZN7cocos2d4Node8scheduleEMNS_3RefEFvfEf", // cocos2dx cpp 3.7.1
+};
+
+constexpr const char *cocos2d_jni[] = {
+    "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeRender", // cocos2dx cpp 3.7.1 / cocos creator 2.4.11
+};
 
 typedef void (*cocos2dx_update_fun)(void *v, float dt);
 typedef void *(*cocos2dx_update_fun2)(void *v, float dt);
 typedef bool (*cocos2dx_update_fun3)(void *v, float dt);
 static gpointer cocos_normal_update1 = nullptr;
 static gpointer cocos_normal_update2 = nullptr;
+static gpointer cocos_normal_update3 = nullptr;
 static gpointer cocos_special_update1 = nullptr;
 static gpointer cocos_special_update2 = nullptr;
 static gpointer cocos_special_update3 = nullptr;
 static gpointer cocos_special_update4 = nullptr;
 static gpointer cocos_special_update5 = nullptr;
+static gpointer cocos_jni_nativeRender = nullptr;
 static bool waitCocos2dxSoLoaded = false;
+static bool isCocosCreator = false;
 
 cocos2dx_update_fun COCOS_NORMAL_UPDATE;
 static void cocos_normal_update_hook(void *v, float dt);
@@ -73,8 +81,8 @@ float (*Time$$get_fixedDeltaTime)();     // 预定义一个方法
 void (*Time$$set_fixedDeltaTime)(float); // 预定义一个方法
 
 // static int open_hook(const char *path, int oflag, ...);
-// static int gettimeofday_hook(struct timeval *tv, struct timezone *tz);
-// static int clock_gettime_hook(clockid_t clock, struct timespec *ts);
+static int gettimeofday_hook(struct timeval *tv, struct timezone *tz);
+static int clock_gettime_hook(clockid_t clock, struct timespec *ts);
 
 inline int64_t getUnixTimestamp()
 {
@@ -93,6 +101,8 @@ static gboolean moduleFound(const GumModuleDetails *details, gpointer user_data)
     // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update1));
     cocos_normal_update2 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_mornal[1]));
     // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update2));
+    cocos_normal_update3 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_mornal[2]));
+    // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update3));
     cocos_special_update1 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[0]));
     // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update1));
     cocos_special_update2 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[1]));
@@ -104,9 +114,9 @@ static gboolean moduleFound(const GumModuleDetails *details, gpointer user_data)
     cocos_special_update5 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[4]));
     // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update5));
 
-    waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr)
-                                || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr)
-                                || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr);
+    cocos_jni_nativeRender = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_jni[0]));
+
+    waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr) || (cocos_normal_update3 != nullptr) || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr) || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr) || (cocos_jni_nativeRender != nullptr);
     return !waitCocos2dxSoLoaded;
 }
 
@@ -188,24 +198,17 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
     /* We don't want to our library to be unloaded after we return. */
     *stay_resident = TRUE;
 
-    // GumInterceptor *interceptor = nullptr;
-    // interceptor = gum_interceptor_obtain();
+    // GumInterceptor *interceptor = gum_interceptor_obtain();
     // // listener = my_callback_listener_new();
     //
-    // /* Transactions are optional but improve performance with multiple hooks. */
     // gum_interceptor_begin_transaction(interceptor);
-    //
     // gpointer open_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "open"));
     // gum_interceptor_replace(interceptor, open_origin_address, reinterpret_cast<gpointer>(&open_hook), NULL, NULL);
     // gpointer gettimeofday_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "gettimeofday"));
     // gum_interceptor_replace(interceptor, gettimeofday_origin_address, reinterpret_cast<gpointer>(&gettimeofday_hook), NULL, NULL);
     // gpointer clock_gettime_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "clock_gettime"));
     // gum_interceptor_replace(interceptor, clock_gettime_origin_address, reinterpret_cast<gpointer>(&clock_gettime_hook), NULL, NULL);
-    //
     // gum_interceptor_end_transaction(interceptor);
-
-    // SPDLOG_INFO("start test enumerate modlues.");
-    // gum_process_enumerate_modules(moduleFound, nullptr);
 
     gp_run = std::make_shared<std::thread>([&]()
                                            {
@@ -226,19 +229,22 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                             }
 
                             do {
+                                SPDLOG_INFO("start test enumerate modlues.");
                                 gum_process_enumerate_modules(moduleFound, nullptr);
                             } while(false);
-                            waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr)
-                                || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr)
-                                || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr);
+                            // waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr)
+                            //     || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr)
+                            //     || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr);
                             if (waitCocos2dxSoLoaded) {
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update1));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update2));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update3));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update1));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update2));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update3));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update4));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update5));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_jni_nativeRender));
                                 break;
                             }
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -249,9 +255,15 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                         {
                             initUnity3Dil2cpp();
                         }
+                        
                         if (waitCocos2dxSoLoaded)
                         {
                             GumInterceptor *interceptor  = gum_interceptor_obtain();
+                            gpointer gettimeofday_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "gettimeofday"));
+                            gum_interceptor_replace(interceptor, gettimeofday_origin_address, reinterpret_cast<gpointer>(&gettimeofday_hook), NULL, NULL);
+                            gpointer clock_gettime_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "clock_gettime"));
+                            gum_interceptor_replace(interceptor, clock_gettime_origin_address, reinterpret_cast<gpointer>(&clock_gettime_hook), NULL, NULL);
+
                             gum_interceptor_begin_transaction(interceptor);
                             if (cocos_normal_update1)
                             {
@@ -260,6 +272,7 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                             }
                             else if (cocos_normal_update2)
                             {
+                                isCocosCreator = (cocos_special_update3 == nullptr && cocos_special_update4 == nullptr && cocos_special_update5 == nullptr);
                                 COCOS_NORMAL_UPDATE = reinterpret_cast<cocos2dx_update_fun>(cocos_normal_update2);
                                 gum_interceptor_replace(interceptor, cocos_normal_update2, reinterpret_cast<gpointer>(&cocos_normal_update_hook), NULL, NULL);
                             }
@@ -289,6 +302,7 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                                 COCOS_SPECIAL_UPDATE_FIVE = reinterpret_cast<cocos2dx_update_fun2>(cocos_special_update5);
                                 gum_interceptor_replace(interceptor, cocos_special_update5, reinterpret_cast<gpointer>(&cocos_special_update_hook_five), NULL, NULL);
                             }
+                            
                             gum_interceptor_end_transaction(interceptor);
                         }
 
@@ -337,63 +351,70 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 //     return open(path, oflag);
 // }
 
-// static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
-// {
-//     int result = gettimeofday(tv, tz);
-//     // LOGD("gettimeofday %p, %p %d", tv, tz, result);
-//     // if (result == 0 && tv != NULL)
-//     if (g_modify_time)
-//     {
-//         if (g_tv.tv_sec == 0)
-//         {
-//             g_tv.tv_sec = tv->tv_sec;
-//             g_tv.tv_usec = tv->tv_usec;
-//         }
-//         tv->tv_sec = g_tv.tv_sec + (tv->tv_sec - g_tv.tv_sec) * g_speed;
-//         tv->tv_usec = g_tv.tv_usec + (tv->tv_usec - g_tv.tv_usec) * g_speed;
-//
-//         // LOGD("gettimeofday %ld -> %ld,  %ld -> %ld", g_tv.tv_sec, tv->tv_sec, g_tv.tv_usec, tv->tv_usec);
-//     }
-//     g_modify_time = false;
-//
-//     return result;
-// }
+static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
+{
+    int result = gettimeofday(tv, tz);
+    // LOGD("gettimeofday %p, %p %d", tv, tz, result);
+    // if (result == 0 && tv != NULL)
+    if (g_modify_time)
+    {
+        if (g_tv.tv_sec == 0)
+        {
+            g_tv.tv_sec = tv->tv_sec;
+            g_tv.tv_usec = tv->tv_usec;
+        }
+        tv->tv_sec = g_tv.tv_sec + (tv->tv_sec - g_tv.tv_sec) * g_speed;
+        tv->tv_usec = g_tv.tv_usec + (tv->tv_usec - g_tv.tv_usec) * g_speed;
 
-// static int clock_gettime_hook(clockid_t clock, struct timespec *ts)
-// {
-//     int result = clock_gettime(clock, ts);
-//     // LOGD("clock_gettime %p, %p %d", &clock, ts, result);
-//     // if (result == 0 && ts != NULL)
-//     if (g_modify_time)
-//     {
-//         if (g_ts.tv_sec == 0)
-//         {
-//             g_ts.tv_sec = ts->tv_sec;
-//             g_ts.tv_nsec = ts->tv_nsec;
-//         }
-//         ts->tv_sec = g_ts.tv_sec + (ts->tv_sec - g_ts.tv_sec) * g_speed;
-//         ts->tv_nsec = g_ts.tv_nsec + (ts->tv_nsec - g_ts.tv_nsec) * g_speed;
-//
-//         // LOGD("clock_gettime time %ld -> %ld", g_ts.tv_sec, ts->tv_sec);
-//     }
-//     g_modify_time = false;
-//
-//     return result;
-// }
+        // LOGD("gettimeofday %ld -> %ld,  %ld -> %ld", g_tv.tv_sec, tv->tv_sec, g_tv.tv_usec, tv->tv_usec);
+    }
+    g_modify_time = false;
+
+    return result;
+}
+
+static int clock_gettime_hook(clockid_t clock, struct timespec *ts)
+{
+    int result = clock_gettime(clock, ts);
+    // LOGD("clock_gettime %p, %p %d", &clock, ts, result);
+    // if (result == 0 && ts != NULL)
+    if (g_modify_time)
+    {
+        if (g_ts.tv_sec == 0)
+        {
+            g_ts.tv_sec = ts->tv_sec;
+            g_ts.tv_nsec = ts->tv_nsec;
+        }
+        ts->tv_sec = g_ts.tv_sec + (ts->tv_sec - g_ts.tv_sec) * g_speed;
+        ts->tv_nsec = g_ts.tv_nsec + (ts->tv_nsec - g_ts.tv_nsec) * g_speed;
+
+        // LOGD("clock_gettime time %ld -> %ld", g_ts.tv_sec, ts->tv_sec);
+    }
+    g_modify_time = false;
+
+    return result;
+}
 
 static void cocos_normal_update_hook(void *v, float dt)
 {
-    dt = dt * g_speed;
-
-    float repeatTime = 0.0;
-
-    while (repeatTime < g_speed)
+    if (isCocosCreator)
     {
-        repeatTime = repeatTime + 0.5;
+        g_modify_time = true;
+    }
+    else
+    {
+        dt = dt * g_speed;
+
+        float repeatTime = 0.0;
+
+        while (repeatTime < g_speed)
+        {
+            repeatTime = repeatTime + 0.5;
+            COCOS_NORMAL_UPDATE(v, dt);
+        }
+
         COCOS_NORMAL_UPDATE(v, dt);
     }
-
-    COCOS_NORMAL_UPDATE(v, dt);
 }
 
 static void cocos_special_update_hook_one(void *v, float dt)
