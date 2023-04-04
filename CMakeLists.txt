@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.4.1)
 
-project(shark_inject C CXX)
+project(android_inject C CXX)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -123,7 +123,7 @@ add_executable(inject_service inject_service.cpp
     )
 target_include_directories(inject_service PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/zlib)
 add_dependencies(inject_service zlibstatic)
-target_link_libraries(inject_service zlibstatic frida-core log)
+target_link_libraries(inject_service zlibstatic frida-gum frida-core log)
 
 if (CMAKE_BUILD_TYPE MATCHES "^Rel.*$")
 set_target_properties(inject_speed PROPERTIES LINK_FLAGS "${LINK_FLAGS} -Wl,--gc-sections,-s,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/UnityCheat.version")

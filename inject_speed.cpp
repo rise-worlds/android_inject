@@ -1,6 +1,8 @@
 #include <fcntl.h>
+#include <pthread.h>
 #include <frida-gum.h>
 #include <unistd.h>
+#include <cstring>
 #include <thread>
 #include <memory>
 #include <Logger.hpp>
@@ -34,13 +36,17 @@ constexpr const char *cocos2d_special[] = {
     "_ZN7cocos2d4Node8scheduleEMNS_3RefEFvfEf", // cocos2dx cpp 3.7.1
 };
 
-constexpr const char *cocos2d_jni[] = {
-    "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeRender", // cocos2dx cpp 3.7.1 / cocos creator 2.4.11
+constexpr const char *cocoscreatro_special[] = {
+    "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeRender",          // cocos2dx cpp 3.7.1 / cocos creator 2.4.11
+    "Java_com_google_androidgamesdk_GameActivity_loadNativeCode",   // cocos creator 3
+    "GameActivity_onCreate",                                        // cocos creator 3
 };
 
 typedef void (*cocos2dx_update_fun)(void *v, float dt);
 typedef void *(*cocos2dx_update_fun2)(void *v, float dt);
 typedef bool (*cocos2dx_update_fun3)(void *v, float dt);
+typedef void (*cocos_jni_GameActivity_loadNativeCode)(void *env, void* javaGameActivity, void* path, void* funcName, void* internalDataDir, void* obbDir, void* externalDataDir, void* jAssetMgr, void* savedState);
+typedef void (*cocos_jni_GameActivity_onCreate)(void *v, void* savedState, size_t size);
 static gpointer cocos_normal_update1 = nullptr;
 static gpointer cocos_normal_update2 = nullptr;
 static gpointer cocos_normal_update3 = nullptr;
@@ -50,7 +56,9 @@ static gpointer cocos_special_update3 = nullptr;
 static gpointer cocos_special_update4 = nullptr;
 static gpointer cocos_special_update5 = nullptr;
 static gpointer cocos_jni_nativeRender = nullptr;
-static bool waitCocos2dxSoLoaded = false;
+static gpointer cocos_jni_loadNativeCode = nullptr;
+static gpointer cocos_jni_onCreate = nullptr;
+static bool waitCocosSoLoaded = false;
 static bool isCocosCreator = false;
 
 cocos2dx_update_fun COCOS_NORMAL_UPDATE;
@@ -71,6 +79,8 @@ static bool cocos_special_update_hook_four(void *__hidden, float radio);
 cocos2dx_update_fun2 COCOS_SPECIAL_UPDATE_FIVE;
 static void *cocos_special_update_hook_five(void *envirenment, float delater);
 
+
+// u3d
 static unsigned long il2cppAddress = 0;  // 存储il2cpp.so基地址
 int (*Screen$$get_height)();             // 预定义一个方法
 int (*Screen$$get_width)();              // 预定义一个方法
@@ -81,8 +91,13 @@ float (*Time$$get_fixedDeltaTime)();     // 预定义一个方法
 void (*Time$$set_fixedDeltaTime)(float); // 预定义一个方法
 
 // static int open_hook(const char *path, int oflag, ...);
+static int pthread_create_hook(void*, void*, void*, void*);
 static int gettimeofday_hook(struct timeval *tv, struct timezone *tz);
 static int clock_gettime_hook(clockid_t clock, struct timespec *ts);
+
+static gpointer pthread_create_origin_address = nullptr;
+static gpointer gettimeofday_origin_address = nullptr;
+static gpointer clock_gettime_origin_address = nullptr;
 
 inline int64_t getUnixTimestamp()
 {
@@ -90,12 +105,17 @@ inline int64_t getUnixTimestamp()
     return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
-static gboolean moduleFound(const GumModuleDetails *details, gpointer user_data)
+static gboolean foundModule(const GumModuleDetails *details, gpointer user_data)
 {
     const char *name = details->name;
     const char *path = details->path;
     SPDLOG_INFO("module name: {}", name);
     SPDLOG_INFO("base: {:#08x}, size: {}, {}", details->range->base_address, details->range->size, path);
+
+    if (std::strcmp(name, "libil2cpp.so") == 0) {
+        il2cppAddress = details->range->base_address;
+        return false;
+    }
 
     cocos_normal_update1 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_mornal[0]));
     // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update1));
@@ -114,10 +134,12 @@ static gboolean moduleFound(const GumModuleDetails *details, gpointer user_data)
     cocos_special_update5 = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_special[4]));
     // SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update5));
 
-    cocos_jni_nativeRender = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocos2d_jni[0]));
+    cocos_jni_nativeRender = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocoscreatro_special[0]));
+    cocos_jni_loadNativeCode = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocoscreatro_special[1]));
+    cocos_jni_onCreate = reinterpret_cast<gpointer>(gum_module_find_export_by_name(name, cocoscreatro_special[2]));
 
-    waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr) || (cocos_normal_update3 != nullptr) || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr) || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr) || (cocos_jni_nativeRender != nullptr);
-    return !waitCocos2dxSoLoaded;
+    waitCocosSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr) || (cocos_normal_update3 != nullptr) || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr) || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr) || (cocos_jni_nativeRender != nullptr) || (cocos_jni_loadNativeCode != nullptr) || (cocos_jni_onCreate != nullptr);
+    return !waitCocosSoLoaded;
 }
 
 void initUnity3Dil2cpp()
@@ -214,28 +236,23 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                                            {
                         SPDLOG_INFO("work thread started.");
                         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                        pthread_create_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "pthread_create"));
+                        gettimeofday_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "gettimeofday"));
+                        clock_gettime_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "clock_gettime"));
                         
                         // gpointer lua = nullptr;
+                        SPDLOG_INFO("start check piling.");
+                        SPDLOG_INFO("start enumerate modlues.");
                         do {
-                            SPDLOG_INFO("start check piling.");
-                            // lua = reinterpret_cast<gpointer>(gum_module_find_export_by_name(nullptr, "luaL_loadbufferx"));
-                            
+                            gum_process_enumerate_modules(foundModule, nullptr);
                             // uinty3d il2cpp
-                            il2cppAddress = (GumAddress)gum_module_find_base_address("libil2cpp.so");
                             if (il2cppAddress)
                             {
                                 SPDLOG_INFO("get il2cpp address: {:#08x}", il2cppAddress);
                                 break;
                             }
-
-                            do {
-                                SPDLOG_INFO("start test enumerate modlues.");
-                                gum_process_enumerate_modules(moduleFound, nullptr);
-                            } while(false);
-                            // waitCocos2dxSoLoaded = (cocos_normal_update1 != nullptr) || (cocos_normal_update2 != nullptr)
-                            //     || (cocos_special_update1 != nullptr) || (cocos_special_update2 != nullptr) || (cocos_special_update3 != nullptr)
-                            //     || (cocos_special_update4 != nullptr) || (cocos_special_update5 != nullptr);
-                            if (waitCocos2dxSoLoaded) {
+                            // cocos
+                            if (waitCocosSoLoaded) {
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update1));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update2));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_normal_update3));
@@ -245,6 +262,8 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update4));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_special_update5));
                                 SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_jni_nativeRender));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_jni_loadNativeCode));
+                                SPDLOG_INFO("get cocos update address: {}", fmt::ptr(cocos_jni_onCreate));
                                 break;
                             }
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -256,12 +275,10 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                             initUnity3Dil2cpp();
                         }
                         
-                        if (waitCocos2dxSoLoaded)
+                        if (waitCocosSoLoaded)
                         {
                             GumInterceptor *interceptor  = gum_interceptor_obtain();
-                            gpointer gettimeofday_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "gettimeofday"));
                             gum_interceptor_replace(interceptor, gettimeofday_origin_address, reinterpret_cast<gpointer>(&gettimeofday_hook), NULL, NULL);
-                            gpointer clock_gettime_origin_address = reinterpret_cast<gpointer>(gum_module_find_export_by_name(NULL, "clock_gettime"));
                             gum_interceptor_replace(interceptor, clock_gettime_origin_address, reinterpret_cast<gpointer>(&clock_gettime_hook), NULL, NULL);
 
                             gum_interceptor_begin_transaction(interceptor);
@@ -301,6 +318,15 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
                             {
                                 COCOS_SPECIAL_UPDATE_FIVE = reinterpret_cast<cocos2dx_update_fun2>(cocos_special_update5);
                                 gum_interceptor_replace(interceptor, cocos_special_update5, reinterpret_cast<gpointer>(&cocos_special_update_hook_five), NULL, NULL);
+                            }
+
+                            if (cocos_jni_loadNativeCode)
+                            {
+
+                            }
+                            if (cocos_jni_onCreate)
+                            {
+
                             }
                             
                             gum_interceptor_end_transaction(interceptor);
@@ -350,6 +376,11 @@ YY_API void example_agent_main(const gchar *data, gboolean *stay_resident)
 
 //     return open(path, oflag);
 // }
+
+static int pthread_create_hook(pthread_t*ptr, const pthread_attr_t*attr, void*func, void*func_data)
+{
+    return pthread_create((pthread_t*)ptr, (const pthread_attr_t*)attr, (void * (*)(void *))func, func_data);
+}
 
 static int gettimeofday_hook(struct timeval *tv, struct timezone *tz)
 {
@@ -461,4 +492,9 @@ __attribute__((constructor)) void constructor_main()
 
     gum_init_embedded();
     SPDLOG_DEBUG("frida-gum init");
+}
+
+__attribute__((destructor)) void destructor_function(void)
+{
+    gum_deinit_embedded();
 }

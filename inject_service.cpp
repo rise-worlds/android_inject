@@ -19,6 +19,7 @@
 #include <httplib/httplib.h>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
+#include <frida-gum.h>
 #include <frida-core.h>
 #include <sys/xattr.h>
 
@@ -32,6 +33,9 @@ struct app_state
 static int service_port = 10086;
 static std::string current_path;
 static std::unordered_map<std::string, app_state> apps_state;
+
+static GError* error = nullptr;
+static FridaDevice* device = nullptr;
 
 void sigFunc(int sig);
 int daemon();
@@ -117,7 +121,12 @@ int inject(const char *process_name, const char *so_path, int service_port, int 
         SPDLOG_INFO("target={} so={} target_pid={} speed={}", process_name, so_path, pid, speed);
         return 0;
     }
-    SPDLOG_INFO("target={} so={} target_pid={} speed={}", process_name, so_path, pid, speed);
+
+    frida_device_enable_spawn_gating_sync(device, g_cancellable_get_current(), &error);
+    FridaSpawnOptions* spawnOpt = frida_spawn_options_new();
+    pid = frida_device_spawn_sync(device, process_name, spawnOpt, g_cancellable_get_current(), &error);
+    g_object_unref (spawnOpt);
+    SPDLOG_INFO("start app: {} -> {}, so -> {}, speed -> {}", process_name, pid, so_path, speed);
 
     auto so_full_path = fmt::format("/data/local/tmp/{}", so_path);
     if (current_path.compare("/data/local/tmp") != 0)
@@ -149,6 +158,9 @@ int inject(const char *process_name, const char *so_path, int service_port, int 
     SPDLOG_DEBUG("inject end");
     frida_injector_close_sync(injector, NULL, NULL);
     g_object_unref(injector);
+
+    frida_device_resume_sync(device, pid, g_cancellable_get_current(), &error);
+    frida_device_disable_spawn_gating_sync(device, g_cancellable_get_current(), &error);
 
     if (result == 0) apps_state[process_name] = {process_name, pid, speed};
 
@@ -182,8 +194,61 @@ int main(int argc, const char **argv)
     if (std::atoi(argv[3]) != 0)
         daemon();
 
+    SPDLOG_INFO("frida version: {}", frida_version_string());
     frida_init();
     frida_selinux_patch_policy();
+
+    GError *error;
+    FridaDeviceManager* deviceManager = frida_device_manager_new();
+    FridaDeviceList* deviceList = frida_device_manager_enumerate_devices_sync(deviceManager, nullptr, &error);
+    if (frida_device_list_size(deviceList) > 0)
+    {
+        device = frida_device_list_get(deviceList, 0);
+    }
+    if (device == nullptr)
+    {
+        exit(0);
+    }
+    SPDLOG_INFO("device id: {}, name: {}", frida_device_get_id(device), frida_device_get_name(device));
+
+    frida_device_enable_spawn_gating_sync(device, g_cancellable_get_current(), &error);
+    FridaSpawnOptions* spawnOpt = frida_spawn_options_new();
+    guint pid = frida_device_spawn_sync(device, "com.cocos2d.cc3timetest", spawnOpt, g_cancellable_get_current(), &error);
+    SPDLOG_INFO("start app: com.cocos2d.cc3timetest -> {}", pid);
+    g_object_unref (spawnOpt);
+    FridaSessionOptions* attachOpt = frida_session_options_new();
+    frida_session_options_set_realm(attachOpt, FRIDA_REALM_NATIVE);
+    frida_session_options_set_persist_timeout(attachOpt, 0);
+    FridaSession* session = frida_device_attach_sync(device, pid, attachOpt, g_cancellable_get_current(), &error);
+    g_object_unref (attachOpt);
+
+    // FridaProcessMatchOptions* procMatchOpt = frida_process_match_options_new();
+    // frida_process_match_options_set_timeout(procMatchOpt, 10);
+    // FridaProcess* process = frida_device_get_process_by_pid_sync(device, pid, procMatchOpt, nullptr, &error);
+    // g_object_unref (procMatchOpt);
+    // if (process)
+    // {
+    //     SPDLOG_INFO("process {}: {}", pid, frida_process_get_name(process));
+    // }
+
+    const char* source = 
+                        "console.log('Script loaded successfully ');"
+                        "Java.perform(() => {"
+                        "  const Activity = Java.use('android.app.Activity');"
+                        "  Activity.onResume.implementation = function () {"
+                        "    send('onResume');"
+                        "    this.onResume();"
+                        "  };"
+                        "});"
+                        ;
+    FridaScriptOptions* scriptOpt = frida_script_options_new();
+    FridaScript* script = frida_session_create_script_sync(session, source, scriptOpt, nullptr, &error);
+    frida_script_load_sync(script, g_cancellable_get_current(), &error);
+    g_object_unref (scriptOpt);
+
+    frida_device_resume_sync(device, pid, g_cancellable_get_current(), &error);
+    frida_device_disable_spawn_gating_sync(device, g_cancellable_get_current(), &error);
+    // frida_script_enable_debugger_sync(script, 0, nullptr, &error);
 
     using namespace httplib;
     Server _server;
